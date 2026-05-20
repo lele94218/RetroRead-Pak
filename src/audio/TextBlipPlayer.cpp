@@ -70,7 +70,6 @@ void TextBlipPlayer::reset() {
     timerMs_ = 0.0f;
     sequence_ = 0;
     spokenVisibleCount_ = 0;
-    codepoints_.clear();
     if (deviceId_ != 0) {
         SDL_ClearQueuedAudio(deviceId_);
     }
@@ -88,15 +87,14 @@ void TextBlipPlayer::playCodepoint(const std::string& codepoint, const std::stri
 }
 
 void TextBlipPlayer::syncVisibleCodepoints(const std::vector<std::string>& codepoints, std::size_t visibleCount) {
-    codepoints_ = codepoints;
-    const std::size_t cappedVisible = std::min(visibleCount, codepoints_.size());
+    const std::size_t cappedVisible = std::min(visibleCount, codepoints.size());
     if (spokenVisibleCount_ > cappedVisible) {
         spokenVisibleCount_ = cappedVisible;
     }
 
     while (spokenVisibleCount_ < cappedVisible && timerMs_ <= 0.0f) {
-        const std::string& codepoint = codepoints_[spokenVisibleCount_];
-        const std::string previous = spokenVisibleCount_ > 0 ? codepoints_[spokenVisibleCount_ - 1] : std::string{};
+        const std::string& codepoint = codepoints[spokenVisibleCount_];
+        const std::string previous = spokenVisibleCount_ > 0 ? codepoints[spokenVisibleCount_ - 1] : std::string{};
         ++spokenVisibleCount_;
 
         if (isFixedBeatSpeakable(codepoint)) {

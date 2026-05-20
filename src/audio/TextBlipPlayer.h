@@ -28,5 +28,4 @@ private:
     float timerMs_ = 0.0f;
     std::uint32_t sequence_ = 0;
     std::size_t spokenVisibleCount_ = 0;
-    std::vector<std::string> codepoints_;
 };

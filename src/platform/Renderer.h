@@ -38,11 +38,22 @@ public:
     virtual void clear(const Color& color) = 0;
     virtual void fillRect(const Rect& rect, const Color& color) = 0;
     virtual void drawRect(const Rect& rect, const Color& color) = 0;
+    virtual void setClipRect(const Rect& rect) = 0;
+    virtual void clearClipRect() = 0;
     virtual void drawText(
         const std::string& text,
         const Rect& bounds,
         const Color& color,
         int fontSize,
+        TextAlign align = TextAlign::Left,
+        FontPreset fontPreset = FontPreset::Normal) = 0;
+    virtual void drawTextReveal(
+        const std::string& text,
+        const Rect& bounds,
+        const Color& color,
+        int fontSize,
+        int revealWidth,
+        int softenWidth = 0,
         TextAlign align = TextAlign::Left,
         FontPreset fontPreset = FontPreset::Normal) = 0;
 

@@ -38,6 +38,14 @@ int dialogueHintFont() {
 #endif
 }
 
+int revealSoftBand() {
+#ifdef NEXTREADING_TG5040
+    return 3;
+#else
+    return 2;
+#endif
+}
+
 void drawInsetFrame(Renderer& renderer, const Rect& bounds, const Color& outer, const Color& inner) {
     renderer.drawRect(bounds, outer);
     renderer.drawRect(Rect{bounds.x + 2, bounds.y + 2, bounds.w - 4, bounds.h - 4}, inner);
@@ -85,12 +93,17 @@ void DialogueBox::setTitle(const std::string& title) {
     title_ = title;
 }
 
-void DialogueBox::setBodyLines(const std::vector<std::string>& lines) {
+void DialogueBox::setBodyView(
+    const std::vector<std::string>* lines,
+    const std::vector<int>* lineWidths,
+    const std::vector<int>* revealWidths,
+    std::size_t begin,
+    std::size_t count) {
     bodyLines_ = lines;
-}
-
-void DialogueBox::setBodyRevealTexts(const std::vector<std::string>& revealTexts) {
-    bodyRevealTexts_ = revealTexts;
+    bodyLineWidths_ = lineWidths;
+    bodyRevealWidths_ = revealWidths;
+    bodyBegin_ = begin;
+    bodyCount_ = count;
 }
 
 void DialogueBox::setHint(const std::string& hint) {
@@ -135,21 +148,52 @@ void DialogueBox::render(Renderer& renderer, const ReaderSettings& settings) {
     const int hintHeight = renderer.lineHeight(hintFont, settings.fontPreset);
     const int innerX = bounds_.x + 24;
     const int innerWidth = bounds_.w - 48;
-    const int bodyRenderWidth = innerWidth + uiSpacing(8, 14);
+    const int bodyRenderWidth = innerWidth;
     const int titleY = bounds_.y + 16;
     const int bodyY = titleY + titleHeight + uiSpacing(14, 22);
     const int lineStep = bodyHeight + uiSpacing(6, 12);
     const int hintY = bounds_.y + bounds_.h - hintHeight - uiSpacing(10, 14);
     renderer.drawText(title_, Rect{innerX, titleY, innerWidth, titleHeight + 6}, titleColor, titleFont, TextAlign::Left, settings.fontPreset);
 
+    if (bodyLines_ == nullptr || bodyLineWidths_ == nullptr || bodyRevealWidths_ == nullptr) {
+        renderer.drawText(
+            hint_,
+            Rect{innerX, hintY, innerWidth, hintHeight + 4},
+            hintColor,
+            hintFont,
+            TextAlign::Right,
+            settings.fontPreset);
+        return;
+    }
+
+    const std::size_t bodyEnd = std::min(bodyBegin_ + bodyCount_, bodyLines_->size());
     int y = bodyY;
-    for (std::size_t i = 0; i < bodyLines_.size(); ++i) {
-        if (i < bodyRevealTexts_.size() && !bodyRevealTexts_[i].empty()) {
+    for (std::size_t i = bodyBegin_; i < bodyEnd; ++i) {
+        const std::size_t localIndex = i - bodyBegin_;
+        const Rect textRect{innerX, y, bodyRenderWidth, bodyHeight + 8};
+        const int revealWidth =
+            localIndex < bodyRevealWidths_->size() ? std::max(0, (*bodyRevealWidths_)[localIndex]) : 0;
+        const int fullWidth = i < bodyLineWidths_->size() ? (*bodyLineWidths_)[i] : 0;
+        if (revealWidth <= 0) {
+            y += lineStep;
+            continue;
+        }
+        if (revealWidth >= fullWidth) {
             renderer.drawText(
-                bodyRevealTexts_[i],
-                Rect{innerX, y, bodyRenderWidth, bodyHeight + 8},
+                (*bodyLines_)[i],
+                textRect,
                 bodyColor,
                 bodyFont,
+                TextAlign::Left,
+                settings.fontPreset);
+        } else {
+            renderer.drawTextReveal(
+                (*bodyLines_)[i],
+                textRect,
+                bodyColor,
+                bodyFont,
+                revealWidth,
+                revealSoftBand(),
                 TextAlign::Left,
                 settings.fontPreset);
         }

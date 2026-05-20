@@ -1,6 +1,7 @@
 #include "ui/ReaderScene.h"
 
 #include <algorithm>
+#include <climits>
 #include <memory>
 #include <sstream>
 #include <utility>
@@ -22,7 +23,12 @@ bool isLineStartForbiddenPunctuation(const std::string& cp) {
            cp == u8"\u300b" || cp == u8"\uff09" || cp == u8"\u3011" || cp == u8"\u2026";
 }
 
-void pullLeadingPunctuationBackward(std::vector<std::string>& lines) {
+void pullLeadingPunctuationBackward(
+    std::vector<std::string>& lines,
+    int maxWidth,
+    int fontSize,
+    FontPreset fontPreset,
+    const Renderer& renderer) {
     for (std::size_t i = 1; i < lines.size(); ++i) {
         auto current = utf8::splitCodepoints(lines[i]);
         if (current.empty()) {
@@ -38,7 +44,13 @@ void pullLeadingPunctuationBackward(std::vector<std::string>& lines) {
             continue;
         }
 
-        lines[i - 1] += utf8::join(current, 0, moveCount);
+        const std::string moved = utf8::join(current, 0, moveCount);
+        const std::string merged = lines[i - 1] + moved;
+        if (renderer.measureTextWidth(merged, fontSize, fontPreset) > maxWidth) {
+            continue;
+        }
+
+        lines[i - 1] = merged;
         lines[i] = utf8::join(current, moveCount, current.size());
     }
 
@@ -103,7 +115,7 @@ void pullLeadingPunctuationBackward(std::vector<std::string>& lines) {
         lines.push_back(text);
     }
 
-    pullLeadingPunctuationBackward(lines);
+    pullLeadingPunctuationBackward(lines, maxWidth, fontSize, fontPreset, renderer);
     return lines;
 }
 
@@ -195,7 +207,7 @@ std::vector<std::string> wrapTextSmart(
         lines.push_back(text);
     }
 
-    pullLeadingPunctuationBackward(lines);
+    pullLeadingPunctuationBackward(lines, maxWidth, fontSize, fontPreset, renderer);
     return lines;
 }
 
@@ -366,15 +378,24 @@ void ReaderScene::render(Renderer& renderer) {
 
     if (state_ == ReaderState::Finished || sentence == nullptr) {
         dialogueBox_.setTitle("The End");
-        dialogueBox_.setBodyLines({"This book has reached the end.", "Press Menu to return."});
-        dialogueBox_.setHint("Menu back");
-        dialogueBox_.render(renderer, settings);
-        return;
-    }
+    static const std::vector<std::string> kFinishedLines{"This book has reached the end.", "Press Menu to return."};
+    static const std::vector<int> kFinishedWidths{};
+    static const std::vector<int> kFinishedRevealWidths{INT_MAX, INT_MAX};
+    dialogueBox_.setBodyView(&kFinishedLines, &kFinishedWidths, &kFinishedRevealWidths, 0, kFinishedLines.size());
+    dialogueBox_.setHint("Menu back");
+    dialogueBox_.render(renderer, settings);
+    return;
+}
 
     dialogueBox_.setTitle(chapter->title);
-    dialogueBox_.setBodyLines(wrapVisibleText(renderer));
-    dialogueBox_.setBodyRevealTexts(visibleRevealTextsOnCurrentPage(renderer));
+    const std::size_t pageEnd = std::min(pageStartLine_ + maxVisibleLines_, cachedWrappedLines_.size());
+    const std::size_t pageCount = pageEnd > pageStartLine_ ? pageEnd - pageStartLine_ : 0;
+    dialogueBox_.setBodyView(
+        &cachedWrappedLines_,
+        &cachedLineWidths_,
+        &visibleRevealWidthsOnCurrentPage(renderer),
+        pageStartLine_,
+        pageCount);
     dialogueBox_.setHint(hint);
     dialogueBox_.render(renderer, settings);
 }
@@ -575,17 +596,6 @@ void ReaderScene::moveToNextChapter() {
     revealCurrentSentence();
 }
 
-std::vector<std::string> ReaderScene::wrapVisibleText(Renderer& renderer) const {
-    const std::vector<std::string>& lines = const_cast<ReaderScene*>(this)->allVisibleLines(renderer);
-    if (lines.empty() || pageStartLine_ >= lines.size()) {
-        return lines;
-    }
-
-    const std::size_t end = std::min(lines.size(), pageStartLine_ + maxVisibleLines_);
-    return std::vector<std::string>(lines.begin() + static_cast<std::ptrdiff_t>(pageStartLine_),
-                                    lines.begin() + static_cast<std::ptrdiff_t>(end));
-}
-
 const Chapter* ReaderScene::currentChapter() const {
     if (progress_.chapterIndex >= book_.chapters.size()) {
         return nullptr;
@@ -634,6 +644,7 @@ void ReaderScene::refreshLayoutCache(Renderer& renderer) {
     const Sentence* sentence = currentSentence();
     if (sentence == nullptr) {
         cachedWrappedLines_.clear();
+        cachedLineWidths_.clear();
         cachedLineCharCounts_.clear();
         cachedLineCodepoints_.clear();
         cachedSentenceText_.clear();
@@ -658,12 +669,15 @@ void ReaderScene::refreshLayoutCache(Renderer& renderer) {
     cachedBodyFont_ = bodyFont;
     cachedFontPreset_ = fontPreset;
     cachedWrappedLines_ = wrapTextSmart(sentence->text, textWidth, bodyFont, fontPreset, renderer);
+    cachedLineWidths_.clear();
     cachedLineCharCounts_.clear();
     cachedLineCodepoints_.clear();
+    cachedLineWidths_.reserve(cachedWrappedLines_.size());
     cachedLineCharCounts_.reserve(cachedWrappedLines_.size());
     cachedLineCodepoints_.reserve(cachedWrappedLines_.size());
     for (const std::string& line : cachedWrappedLines_) {
         const auto codepoints = utf8::splitCodepoints(line);
+        cachedLineWidths_.push_back(renderer.measureTextWidth(line, bodyFont, fontPreset));
         cachedLineCharCounts_.push_back(codepoints.size());
         cachedLineCodepoints_.push_back(codepoints);
     }
@@ -674,10 +688,11 @@ void ReaderScene::invalidateLayoutCache() {
     layoutCacheValid_ = false;
 }
 
-std::vector<std::string> ReaderScene::visibleRevealTextsOnCurrentPage(Renderer& renderer) const {
+std::vector<int>& ReaderScene::visibleRevealWidthsOnCurrentPage(Renderer& renderer) const {
     const Sentence* sentence = currentSentence();
     if (sentence == nullptr) {
-        return {};
+        cachedVisibleRevealWidths_.clear();
+        return cachedVisibleRevealWidths_;
     }
 
     const_cast<ReaderScene*>(this)->allVisibleLines(renderer);
@@ -687,19 +702,41 @@ std::vector<std::string> ReaderScene::visibleRevealTextsOnCurrentPage(Renderer& 
         consumedBeforePage += cachedLineCharCounts_[i];
     }
 
-    std::size_t remainingVisible =
-        typer_.visibleChars() > consumedBeforePage ? typer_.visibleChars() - consumedBeforePage : 0;
     const std::size_t pageEnd = std::min(pageStartLine_ + maxVisibleLines_, cachedWrappedLines_.size());
-    std::vector<std::string> texts;
-    texts.reserve(pageEnd > pageStartLine_ ? pageEnd - pageStartLine_ : 0);
 
-    for (std::size_t i = pageStartLine_; i < pageEnd; ++i) {
-        const std::size_t visibleCount = std::min<std::size_t>(remainingVisible, cachedLineCharCounts_[i]);
-        texts.push_back(utf8::join(cachedLineCodepoints_[i], 0, visibleCount));
-        remainingVisible = remainingVisible > cachedLineCharCounts_[i] ? remainingVisible - cachedLineCharCounts_[i] : 0;
+    cachedVisibleRevealWidths_.clear();
+    cachedVisibleRevealWidths_.reserve(pageEnd > pageStartLine_ ? pageEnd - pageStartLine_ : 0);
+
+    float remainingProgress = 0.0f;
+    if (typer_.visibleChars() > consumedBeforePage) {
+        remainingProgress = static_cast<float>(typer_.visibleChars() - consumedBeforePage);
+    }
+    if (!typer_.isComplete()) {
+        remainingProgress += typer_.currentRevealProgress();
     }
 
-    return texts;
+    std::size_t totalPageChars = 0;
+    int totalPageWidth = 0;
+    std::vector<int> fullLineWidths;
+    fullLineWidths.reserve(pageEnd > pageStartLine_ ? pageEnd - pageStartLine_ : 0);
+    for (std::size_t i = pageStartLine_; i < pageEnd; ++i) {
+        totalPageChars += cachedLineCharCounts_[i];
+        const int lineWidth = cachedLineWidths_[i];
+        fullLineWidths.push_back(lineWidth);
+        totalPageWidth += lineWidth;
+    }
+
+    const float clampedPageProgress =
+        totalPageChars > 0 ? std::clamp(remainingProgress / static_cast<float>(totalPageChars), 0.0f, 1.0f) : 0.0f;
+    float remainingPixelBudget = static_cast<float>(totalPageWidth) * clampedPageProgress;
+
+    for (int fullLineWidth : fullLineWidths) {
+        const int revealWidth = static_cast<int>(std::clamp(remainingPixelBudget, 0.0f, static_cast<float>(fullLineWidth)));
+        cachedVisibleRevealWidths_.push_back(revealWidth);
+        remainingPixelBudget = std::max(0.0f, remainingPixelBudget - static_cast<float>(fullLineWidth));
+    }
+
+    return cachedVisibleRevealWidths_;
 }
 
 std::size_t ReaderScene::visibleCharsOnCurrentPage(Renderer& renderer) const {

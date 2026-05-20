@@ -56,6 +56,12 @@ int renderScale(int size, FontPreset preset) {
     return 1;
 }
 
+std::string textTextureCacheKey(const std::string& text, const Color& color, int fontSize, FontPreset fontPreset) {
+    return std::to_string(fontSize) + "|" + std::to_string(static_cast<int>(fontPreset)) + "|" +
+           std::to_string(color.r) + "," + std::to_string(color.g) + "," + std::to_string(color.b) + "," +
+           std::to_string(color.a) + "|" + text;
+}
+
 #ifdef NEXTREADING_NO_SDL_TTF
 std::uint32_t decodeUtf8Codepoint(const std::string& codepoint) {
     return decodeUtf8CodepointGeneric(codepoint);
@@ -157,6 +163,7 @@ bool SDLRenderer::initialize() {
 }
 
 void SDLRenderer::shutdown() {
+    clearTextTextureCache();
 #ifndef NEXTREADING_NO_SDL_TTF
     for (auto& [size, font] : fontCache_) {
         (void)size;
@@ -222,6 +229,15 @@ void SDLRenderer::drawRect(const Rect& rect, const Color& color) {
     SDL_RenderDrawRect(renderer_, &sdlRect);
 }
 
+void SDLRenderer::setClipRect(const Rect& rect) {
+    const SDL_Rect sdlRect = toSdlRect(rect);
+    SDL_RenderSetClipRect(renderer_, &sdlRect);
+}
+
+void SDLRenderer::clearClipRect() {
+    SDL_RenderSetClipRect(renderer_, nullptr);
+}
+
 void SDLRenderer::drawText(
     const std::string& text,
     const Rect& bounds,
@@ -233,71 +249,167 @@ void SDLRenderer::drawText(
         return;
     }
 
+    CachedTextTexture* cached = cachedTextTexture(text, color, fontSize, fontPreset);
+    if (cached == nullptr || cached->texture == nullptr) {
+        return;
+    }
+
+    SDL_Rect target = toSdlRect(bounds);
+    if (align == TextAlign::Center) {
+        target.x = bounds.x + (bounds.w - cached->width) / 2;
+    } else if (align == TextAlign::Right) {
+        target.x = bounds.x + bounds.w - cached->width;
+    }
+    target.w = cached->width;
+    target.h = cached->height;
+
+    SDL_SetTextureAlphaMod(cached->texture, color.a);
+    SDL_RenderCopy(renderer_, cached->texture, nullptr, &target);
+}
+
+void SDLRenderer::drawTextReveal(
+    const std::string& text,
+    const Rect& bounds,
+    const Color& color,
+    int fontSize,
+    int revealWidth,
+    int softenWidth,
+    TextAlign align,
+    FontPreset fontPreset) {
+    if (text.empty() || revealWidth <= 0) {
+        return;
+    }
+
+    CachedTextTexture* cached = cachedTextTexture(text, color, fontSize, fontPreset);
+    if (cached == nullptr || cached->texture == nullptr) {
+        return;
+    }
+
+    SDL_Rect target = toSdlRect(bounds);
+    if (align == TextAlign::Center) {
+        target.x = bounds.x + (bounds.w - cached->width) / 2;
+    } else if (align == TextAlign::Right) {
+        target.x = bounds.x + bounds.w - cached->width;
+    }
+    target.w = cached->width;
+    target.h = cached->height;
+
+    const int clampedReveal = std::max(0, std::min(revealWidth, target.w));
+    const int clampedSoft = std::max(0, std::min(softenWidth, clampedReveal));
+    const int solidWidth = std::max(0, clampedReveal - clampedSoft);
+    const int scale = renderScale(fontSize, fontPreset);
+
+    SDL_SetTextureBlendMode(cached->texture, SDL_BLENDMODE_BLEND);
+
+    if (solidWidth > 0) {
+        SDL_Rect src{0, 0, std::max(1, solidWidth / std::max(1, scale)), target.h / std::max(1, scale)};
+        SDL_Rect dst{target.x, target.y, solidWidth, target.h};
+        SDL_SetTextureAlphaMod(cached->texture, color.a);
+        SDL_RenderCopy(renderer_, cached->texture, &src, &dst);
+    }
+
+    if (clampedSoft > 0) {
+        const int band1 = std::max(1, clampedSoft / 4);
+        const int band2 = std::max(1, clampedSoft / 4);
+        const int band3 = std::max(1, clampedSoft / 4);
+        const int band4 = std::max(1, clampedSoft - band1 - band2 - band3);
+        const std::array<int, 4> bandWidths{band1, band2, band3, band4};
+        const std::array<std::uint8_t, 4> bandAlpha{
+            static_cast<std::uint8_t>(color.a / 8),
+            static_cast<std::uint8_t>(color.a * 3 / 8),
+            static_cast<std::uint8_t>(color.a * 5 / 8),
+            static_cast<std::uint8_t>(color.a * 7 / 8),
+        };
+
+        int consumed = 0;
+        for (std::size_t i = 0; i < bandWidths.size(); ++i) {
+            const int bandWidth = bandWidths[i];
+            if (bandWidth <= 0) {
+                continue;
+            }
+            SDL_Rect src{
+                std::max(0, (solidWidth + consumed) / std::max(1, scale)),
+                0,
+                std::max(1, bandWidth / std::max(1, scale)),
+                target.h / std::max(1, scale)};
+            SDL_Rect dst{target.x + solidWidth + consumed, target.y, bandWidth, target.h};
+            SDL_SetTextureAlphaMod(cached->texture, bandAlpha[i]);
+            SDL_RenderCopy(renderer_, cached->texture, &src, &dst);
+            consumed += bandWidth;
+        }
+        SDL_SetTextureAlphaMod(cached->texture, color.a);
+    }
+}
+
+SDLRenderer::CachedTextTexture* SDLRenderer::cachedTextTexture(
+    const std::string& text,
+    const Color& color,
+    int fontSize,
+    FontPreset fontPreset) {
+    if (text.empty()) {
+        return nullptr;
+    }
+
+    const std::string key = textTextureCacheKey(text, color, fontSize, fontPreset);
+    auto it = textTextureCache_.find(key);
+    if (it != textTextureCache_.end()) {
+        return &it->second;
+    }
+
+    if (textTextureCache_.size() >= 128) {
+        clearTextTextureCache();
+    }
+
+    CachedTextTexture cached;
+
 #ifndef NEXTREADING_NO_SDL_TTF
     TTF_Font* font = fontForSize(fontSize, fontPreset);
     if (font == nullptr) {
-        return;
+        return nullptr;
     }
 
     SDL_Surface* surface = TTF_RenderUTF8_Blended(font, text.c_str(), toSdlColor(color));
     if (surface == nullptr) {
-        return;
+        return nullptr;
     }
 
-    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer_, surface);
-    if (texture == nullptr) {
+    cached.texture = SDL_CreateTextureFromSurface(renderer_, surface);
+    if (cached.texture == nullptr) {
         SDL_FreeSurface(surface);
-        return;
+        return nullptr;
     }
 
     if (fontPreset == FontPreset::Pixel) {
-        SDL_SetTextureScaleMode(texture, SDL_ScaleModeNearest);
+        SDL_SetTextureScaleMode(cached.texture, SDL_ScaleModeNearest);
     }
 
-    SDL_Rect target = toSdlRect(bounds);
     const int scale = renderScale(fontSize, fontPreset);
-    target.w = surface->w * scale;
-    target.h = surface->h * scale;
-
-    if (align == TextAlign::Center) {
-        target.x = bounds.x + (bounds.w - target.w) / 2;
-    } else if (align == TextAlign::Right) {
-        target.x = bounds.x + bounds.w - target.w;
-    }
-
-    SDL_RenderCopy(renderer_, texture, nullptr, &target);
-    SDL_DestroyTexture(texture);
+    cached.width = surface->w * scale;
+    cached.height = surface->h * scale;
     SDL_FreeSurface(surface);
 #else
     FT_Face face = faceForPreset(fontPreset);
     if (face == nullptr) {
-        return;
+        return nullptr;
     }
 
     const int renderSize = renderFontSize(fontSize, fontPreset);
     const int scale = renderScale(fontSize, fontPreset);
     FT_Set_Pixel_Sizes(face, 0, static_cast<FT_UInt>(renderSize));
 
-    int unscaledWidth = measureTextWidth(text, fontSize, fontPreset) / std::max(1, scale);
-    int startX = 0;
-    if (align == TextAlign::Center) {
-        startX = std::max(0, (bounds.w - unscaledWidth * scale) / 2) / scale;
-    } else if (align == TextAlign::Right) {
-        startX = std::max(0, bounds.w - unscaledWidth * scale) / scale;
-    }
-
-    const int surfaceW = std::max(1, bounds.w / std::max(1, scale));
-    const int surfaceH = std::max(1, bounds.h / std::max(1, scale));
+    const int unscaledWidth = measureTextWidth(text, fontSize, fontPreset) / std::max(1, scale);
+    const int surfaceW = std::max(1, unscaledWidth);
+    const int surfaceH = std::max(1, lineHeight(fontSize, fontPreset) / std::max(1, scale));
     SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(0, surfaceW, surfaceH, 32, SDL_PIXELFORMAT_RGBA32);
     if (surface == nullptr) {
-        return;
+        return nullptr;
     }
     SDL_FillRect(surface, nullptr, SDL_MapRGBA(surface->format, 0, 0, 0, 0));
 
     const auto codepoints = utf8::splitCodepoints(text);
     int baseline = std::max(renderSize, static_cast<int>(face->size->metrics.ascender >> 6));
     baseline = std::min(surfaceH - 1, baseline);
-    int penX = startX;
+    int penX = 0;
     std::uint8_t* pixels = static_cast<std::uint8_t*>(surface->pixels);
     const int pitch = surface->pitch;
 
@@ -314,16 +426,16 @@ void SDLRenderer::drawText(
 
         FT_GlyphSlot glyph = face->glyph;
         const FT_Bitmap& bmp = glyph->bitmap;
-        int glyphX = penX + glyph->bitmap_left;
-        int glyphY = baseline - glyph->bitmap_top;
+        const int glyphX = penX + glyph->bitmap_left;
+        const int glyphY = baseline - glyph->bitmap_top;
 
         for (int row = 0; row < static_cast<int>(bmp.rows); ++row) {
-            int dstY = glyphY + row;
+            const int dstY = glyphY + row;
             if (dstY < 0 || dstY >= surfaceH) {
                 continue;
             }
             for (int col = 0; col < static_cast<int>(bmp.width); ++col) {
-                int dstX = glyphX + col;
+                const int dstX = glyphX + col;
                 if (dstX < 0 || dstX >= surfaceW) {
                     continue;
                 }
@@ -349,26 +461,34 @@ void SDLRenderer::drawText(
         penX += static_cast<int>(glyph->advance.x >> 6);
     }
 
-    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer_, surface);
-    if (texture != nullptr) {
-        if (fontPreset == FontPreset::Pixel) {
-            SDL_SetTextureScaleMode(texture, SDL_ScaleModeNearest);
-        }
-        SDL_Rect target = toSdlRect(bounds);
-        if (scale > 1) {
-            target.w = surfaceW * scale;
-            target.h = surfaceH * scale;
-            if (align == TextAlign::Center) {
-                target.x = bounds.x + (bounds.w - target.w) / 2;
-            } else if (align == TextAlign::Right) {
-                target.x = bounds.x + bounds.w - target.w;
-            }
-        }
-        SDL_RenderCopy(renderer_, texture, nullptr, &target);
-        SDL_DestroyTexture(texture);
+    cached.texture = SDL_CreateTextureFromSurface(renderer_, surface);
+    if (cached.texture == nullptr) {
+        SDL_FreeSurface(surface);
+        return nullptr;
     }
+    if (fontPreset == FontPreset::Pixel) {
+        SDL_SetTextureScaleMode(cached.texture, SDL_ScaleModeNearest);
+    }
+    cached.width = surfaceW * scale;
+    cached.height = surfaceH * scale;
     SDL_FreeSurface(surface);
 #endif
+
+    auto [insertedIt, inserted] = textTextureCache_.emplace(key, cached);
+    if (!inserted && cached.texture != nullptr) {
+        SDL_DestroyTexture(cached.texture);
+    }
+    return inserted ? &insertedIt->second : &insertedIt->second;
+}
+
+void SDLRenderer::clearTextTextureCache() {
+    for (auto& [key, cached] : textTextureCache_) {
+        (void)key;
+        if (cached.texture != nullptr) {
+            SDL_DestroyTexture(cached.texture);
+        }
+    }
+    textTextureCache_.clear();
 }
 
 int SDLRenderer::measureTextWidth(const std::string& text, int fontSize, FontPreset fontPreset) const {

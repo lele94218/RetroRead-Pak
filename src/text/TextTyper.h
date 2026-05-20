@@ -15,6 +15,7 @@ public:
     const std::string& text() const;
     const std::vector<std::string>& codepoints() const;
     std::size_t visibleChars() const;
+    float currentRevealProgress() const;
     std::string visibleText() const;
 
 private:

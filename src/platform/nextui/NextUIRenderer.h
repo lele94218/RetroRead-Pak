@@ -42,11 +42,22 @@ public:
     void clear(const Color& color) override;
     void fillRect(const Rect& rect, const Color& color) override;
     void drawRect(const Rect& rect, const Color& color) override;
+    void setClipRect(const Rect& rect) override;
+    void clearClipRect() override;
     void drawText(
         const std::string& text,
         const Rect& bounds,
         const Color& color,
         int fontSize,
+        TextAlign align,
+        FontPreset fontPreset) override;
+    void drawTextReveal(
+        const std::string& text,
+        const Rect& bounds,
+        const Color& color,
+        int fontSize,
+        int revealWidth,
+        int softenWidth,
         TextAlign align,
         FontPreset fontPreset) override;
 

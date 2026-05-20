@@ -58,6 +58,13 @@ std::size_t TextTyper::visibleChars() const {
     return visibleChars_;
 }
 
+float TextTyper::currentRevealProgress() const {
+    if (isComplete() || baseSpeedMs_ <= 0) {
+        return 0.0f;
+    }
+    return std::clamp(accumulatedMs_ / static_cast<float>(baseSpeedMs_), 0.0f, 0.999f);
+}
+
 std::string TextTyper::visibleText() const {
     return utf8::join(codepoints_, 0, visibleChars_);
 }

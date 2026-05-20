@@ -40,8 +40,7 @@ private:
     void advancePage(Renderer& renderer);
     bool canAdvanceTypedPage(Renderer& renderer) const;
     const std::vector<std::string>& allVisibleLines(Renderer& renderer);
-    std::vector<std::string> wrapVisibleText(Renderer& renderer) const;
-    std::vector<std::string> visibleRevealTextsOnCurrentPage(Renderer& renderer) const;
+    std::vector<int>& visibleRevealWidthsOnCurrentPage(Renderer& renderer) const;
     std::size_t visibleLineCapacity(Renderer& renderer) const;
     std::size_t visibleCharsOnCurrentPage(Renderer& renderer) const;
     void refreshLayoutCache(Renderer& renderer);
@@ -66,7 +65,9 @@ private:
     mutable int cachedBodyFont_ = 0;
     mutable FontPreset cachedFontPreset_ = FontPreset::Normal;
     mutable std::vector<std::string> cachedWrappedLines_;
+    mutable std::vector<int> cachedLineWidths_;
     mutable std::vector<std::size_t> cachedLineCharCounts_;
     mutable std::vector<std::vector<std::string>> cachedLineCodepoints_;
+    mutable std::vector<int> cachedVisibleRevealWidths_;
     bool renderRequested_ = false;
 };

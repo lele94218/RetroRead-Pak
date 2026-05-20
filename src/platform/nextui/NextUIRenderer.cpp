@@ -72,6 +72,13 @@ void NextUIRenderer::drawRect(const Rect& rect, const Color& color) {
     }
 }
 
+void NextUIRenderer::setClipRect(const Rect& rect) {
+    (void)rect;
+}
+
+void NextUIRenderer::clearClipRect() {
+}
+
 void NextUIRenderer::drawText(
     const std::string& text,
     const Rect& bounds,
@@ -86,6 +93,24 @@ void NextUIRenderer::drawText(
     if (g_hooks.drawText != nullptr) {
         g_hooks.drawText(g_hooks.userdata, text.c_str(), bounds, color, fontSize, align, fontPreset);
     }
+}
+
+void NextUIRenderer::drawTextReveal(
+    const std::string& text,
+    const Rect& bounds,
+    const Color& color,
+    int fontSize,
+    int revealWidth,
+    int softenWidth,
+    TextAlign align,
+    FontPreset fontPreset) {
+    (void)softenWidth;
+    if (revealWidth <= 0) {
+        return;
+    }
+    setClipRect(Rect{bounds.x, bounds.y, revealWidth, bounds.h});
+    drawText(text, bounds, color, fontSize, align, fontPreset);
+    clearClipRect();
 }
 
 int NextUIRenderer::measureTextWidth(const std::string& text, int fontSize, FontPreset fontPreset) const {
