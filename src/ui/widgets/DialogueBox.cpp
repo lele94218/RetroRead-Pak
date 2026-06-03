@@ -112,6 +112,10 @@ void DialogueBox::setHint(const std::string& hint) {
     hint_ = hint;
 }
 
+void DialogueBox::setFootnoteLines(const std::vector<std::string>& lines) {
+    footnoteLines_ = lines;
+}
+
 void DialogueBox::render(Renderer& renderer, const ReaderSettings& settings) {
     const ThemePalette palette = themePalette(settings.themePreset);
     const Color panel = palette.dialoguePanel;
@@ -254,11 +258,24 @@ void DialogueBox::render(Renderer& renderer, const ReaderSettings& settings) {
         y += lineStep;
     }
 
-    renderer.drawText(
-        hint_,
-        Rect{innerX, hintY, innerWidth, hintHeight + 4},
-        hintColor,
-        hintFont,
-        TextAlign::Right,
-        uiFont);
+    if (!footnoteLines_.empty()) {
+        const int fnFont = hintFont;
+        const int fnLineH = hintHeight + 2;
+        int fnY = hintY - static_cast<int>(footnoteLines_.size() - 1) * fnLineH;
+        fnY = std::max(fnY, bodyY);
+        for (const std::string& fl : footnoteLines_) {
+            if (fnY + fnLineH > bounds_.y + bounds_.h) break;
+            renderer.drawText(fl, Rect{innerX, fnY, innerWidth, fnLineH},
+                hintColor, fnFont, TextAlign::Left, uiFont);
+            fnY += fnLineH;
+        }
+    } else {
+        renderer.drawText(
+            hint_,
+            Rect{innerX, hintY, innerWidth, hintHeight + 4},
+            hintColor,
+            hintFont,
+            TextAlign::Right,
+            uiFont);
+    }
 }

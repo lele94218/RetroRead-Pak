@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 enum class ThemePreset : std::uint8_t {
@@ -49,6 +50,8 @@ struct Chapter {
     std::string id;
     std::string title;
     std::vector<Sentence> sentences;
+    std::vector<std::vector<std::string>> sentenceFootnoteIds;
+    std::unordered_map<std::string, std::string> footnoteDefs;
 };
 
 struct BookScript {

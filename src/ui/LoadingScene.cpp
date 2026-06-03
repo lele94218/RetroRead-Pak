@@ -5,12 +5,16 @@
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <regex>
+#include <unordered_map>
 #include <utility>
 #include <SDL.h>
 
 #include "app/Application.h"
 #include "core/ProgressStore.h"
+#include "epub/EpubArchive.h"
 #include "epub/EpubCompiler.h"
+#include "epub/EpubKernel.h"
 #include "platform/Input.h"
 #include "platform/Renderer.h"
 #include "txt/TxtCompiler.h"
@@ -29,6 +33,108 @@ bool hasExtension(const std::string& path, const char* extension) {
     return ext == extension;
 }
 
+void enrichWithFootnotes(const std::string& epubPath, BookScript& book) {
+    if (book.chapters.empty()) return;
+
+    EpubArchive archive;
+    if (!archive.open(epubPath)) return;
+
+    // Read all HTML files from the EPUB and run EpubKernel for footnote extraction
+    // We need to match kernel chapters back to BookScript chapters by title
+    EpubKernel kernel;
+
+    // Parse the OPF to get spine order (simplified: read all xhtml from manifest)
+    std::string containerXml;
+    if (!archive.readTextFile("META-INF/container.xml", containerXml)) return;
+
+    // Find rootfile path
+    auto rfPos = containerXml.find("full-path=\"");
+    if (rfPos == std::string::npos) return;
+    rfPos += 11;
+    auto rfEnd = containerXml.find('"', rfPos);
+    if (rfEnd == std::string::npos) return;
+    const std::string opfPath = containerXml.substr(rfPos, rfEnd - rfPos);
+
+    std::string opfXml;
+    if (!archive.readTextFile(opfPath, opfXml)) return;
+
+    // Find all href="...xhtml" or href="...html" in manifest
+    std::string opfDir;
+    auto lastSlash = opfPath.rfind('/');
+    if (lastSlash != std::string::npos) opfDir = opfPath.substr(0, lastSlash + 1);
+
+    std::regex hrefRe(R"RE(href="([^"]+\.x?html?)")RE", std::regex::icase);
+    auto begin = std::sregex_iterator(opfXml.begin(), opfXml.end(), hrefRe);
+    auto end = std::sregex_iterator();
+    for (auto it = begin; it != end; ++it) {
+        std::string htmlPath = opfDir + (*it)[1].str();
+        std::string html;
+        if (archive.readTextFile(htmlPath, html)) {
+            kernel.loadHtml(html);
+        }
+    }
+
+    // Match kernel chapters to BookScript chapters by sentence text overlap
+    for (std::size_t bi = 0; bi < book.chapters.size(); ++bi) {
+        Chapter& bookCh = book.chapters[bi];
+        if (bookCh.sentences.empty()) continue;
+
+        const std::string& firstSent = bookCh.sentences[0].text;
+        for (std::size_t ki = 0; ki < kernel.chapterCount(); ++ki) {
+            const EpubKernel::Chapter& kCh = kernel.chapter(ki);
+            if (kCh.sentences.empty()) continue;
+
+            // Check if first sentence of BookScript chapter appears in kernel chapter
+            bool matched = false;
+            for (std::size_t ks = 0; ks < kCh.sentences.size(); ++ks) {
+                if (kCh.sentences[ks].find(firstSent.substr(0, std::min<std::size_t>(30, firstSent.size()))) != std::string::npos) {
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) continue;
+
+            bookCh.footnoteDefs = kCh.footnoteDefs;
+
+            // For each BookScript sentence, find which kernel paragraph contains it,
+            // then check which specific footnote markers ([N] or 〔X〕) are in that sentence
+            bookCh.sentenceFootnoteIds.resize(bookCh.sentences.size());
+            for (std::size_t si = 0; si < bookCh.sentences.size(); ++si) {
+                const std::string& sentText = bookCh.sentences[si].text;
+                // Check each footnote def ID: does this sentence contain a marker for it?
+                for (const auto& [fnId, fnContent] : kCh.footnoteDefs) {
+                    // Extract number from "m73" -> "73"
+                    if (fnId.size() < 2 || fnId[0] != 'm') continue;
+                    std::string num = fnId.substr(1);
+                    // Check for [N] marker
+                    if (sentText.find("[" + num + "]") != std::string::npos) {
+                        bookCh.sentenceFootnoteIds[si].push_back(fnId);
+                    }
+                }
+                // Also check for 〔X〕 style markers by matching kernel IDs
+                for (std::size_t ks = 0; ks < kCh.sentenceFootnoteIds.size(); ++ks) {
+                    for (const std::string& fnId : kCh.sentenceFootnoteIds[ks]) {
+                        // Already assigned via [N]?
+                        auto& assigned = bookCh.sentenceFootnoteIds[si];
+                        if (std::find(assigned.begin(), assigned.end(), fnId) != assigned.end()) continue;
+                        // Check if kernel sentence text around this ref overlaps with BookScript sentence
+                        // Use a unique snippet from the kernel paragraph near the ref
+                        const std::string& kText = kCh.sentences[ks];
+                        // Find 〔 markers in both
+                        if (sentText.find("\xe3\x80\x94") != std::string::npos) { // 〔
+                            // Check if this kernel paragraph contains the BookScript sentence text
+                            if (kText.find(sentText.substr(0, std::min<std::size_t>(15, sentText.size()))) != std::string::npos) {
+                                assigned.push_back(fnId);
+                            }
+                        }
+                    }
+                }
+            }
+            break;
+        }
+    }
+}
+
 bool loadOrCompileBook(Application& app, const std::string& path, BookScript& outBook) {
     if (app.bookCache().load(app.fileSystem(), path, outBook)) {
         return true;
@@ -44,6 +150,7 @@ bool loadOrCompileBook(Application& app, const std::string& path, BookScript& ou
         if (!compiler.compile(path, outBook)) {
             return false;
         }
+        enrichWithFootnotes(path, outBook);
     }
 
     app.bookCache().save(app.fileSystem(), outBook);

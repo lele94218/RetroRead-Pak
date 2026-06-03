@@ -7,7 +7,7 @@
 #include "platform/FileSystem.h"
 
 namespace {
-constexpr const char* kCacheVersion = "10";
+constexpr const char* kCacheVersion = "12";
 
 std::string escapeField(std::string value) {
     std::string out;
@@ -124,6 +124,17 @@ bool BookCache::load(FileSystem& fileSystem, const std::string& epubPath, BookSc
                 0,
                 static_cast<std::uint32_t>(currentChapter->sentences.size()),
                 isTitle == "1"});
+            currentChapter->sentenceFootnoteIds.emplace_back();
+        } else if (kind == "FNDEF" && currentChapter != nullptr) {
+            std::string fnId;
+            std::string fnContent;
+            std::getline(lineStream, fnId, '\t');
+            std::getline(lineStream, fnContent, '\t');
+            currentChapter->footnoteDefs[unescapeField(fnId)] = unescapeField(fnContent);
+        } else if (kind == "FNREF" && currentChapter != nullptr && !currentChapter->sentenceFootnoteIds.empty()) {
+            std::string fnId;
+            std::getline(lineStream, fnId, '\t');
+            currentChapter->sentenceFootnoteIds.back().push_back(unescapeField(fnId));
         }
     }
 
@@ -158,10 +169,22 @@ bool BookCache::save(FileSystem& fileSystem, const BookScript& book) const {
             << '\t' << escapeField(chapter.title)
             << '\n';
 
-        for (const Sentence& sentence : chapter.sentences) {
+        for (const auto& [fnId, fnContent] : chapter.footnoteDefs) {
+            out << "FNDEF\t" << escapeField(fnId)
+                << '\t' << escapeField(fnContent)
+                << '\n';
+        }
+
+        for (std::size_t si = 0; si < chapter.sentences.size(); ++si) {
+            const Sentence& sentence = chapter.sentences[si];
             out << "SENTENCE\t" << escapeField(sentence.text)
                 << '\t' << (sentence.isTitle ? 1 : 0)
                 << '\n';
+            if (si < chapter.sentenceFootnoteIds.size()) {
+                for (const std::string& fnId : chapter.sentenceFootnoteIds[si]) {
+                    out << "FNREF\t" << escapeField(fnId) << '\n';
+                }
+            }
         }
     }
 

@@ -17,8 +17,10 @@ public:
         std::size_t begin,
         std::size_t count);
     void setHint(const std::string& hint);
+    void setFootnoteLines(const std::vector<std::string>& lines);
     void render(Renderer& renderer, const ReaderSettings& settings);
     void advanceFrame() { ++scrambleFrame_; }
+    const Rect& bounds() const { return bounds_; }
 
 private:
     Rect bounds_{40, 420, 1200, 240};
@@ -29,5 +31,6 @@ private:
     std::size_t bodyBegin_ = 0;
     std::size_t bodyCount_ = 0;
     std::string hint_;
+    std::vector<std::string> footnoteLines_;
     std::uint32_t scrambleFrame_ = 0;
 };

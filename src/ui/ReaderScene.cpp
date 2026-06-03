@@ -407,6 +407,22 @@ void ReaderScene::render(Renderer& renderer) {
         pageStartLine_,
         pageCount);
     dialogueBox_.setHint(hint);
+
+    // Set footnote lines inside dialogue box — each footnote on its own line(s)
+    std::vector<std::string> fnLines;
+    if (state_ != ReaderState::Typing && !currentFootnoteIds_.empty() && chapter) {
+        const int fnW = dialogueWidth - 48;
+        for (const std::string& fnId : currentFootnoteIds_) {
+            auto it = chapter->footnoteDefs.find(fnId);
+            if (it == chapter->footnoteDefs.end()) continue;
+            std::string num = (fnId.size() > 1 && fnId[0] == 'm') ? fnId.substr(1) : fnId;
+            std::string prefixed = "[" + num + "] " + it->second;
+            auto lines = wrapTextSmart(prefixed, fnW, 16, FontPreset::Pixel, renderer);
+            for (auto& l : lines) fnLines.push_back(std::move(l));
+        }
+    }
+    dialogueBox_.setFootnoteLines(fnLines);
+
     dialogueBox_.advanceFrame();
     dialogueBox_.render(renderer, settings);
 }
@@ -570,6 +586,19 @@ void ReaderScene::revealCurrentSentence() {
         }
         if (totalCount > 0 && asciiCount * 100 / totalCount > 60) {
             speed = std::max(1, speed / 5);
+        }
+    }
+
+    // Collect footnote IDs for this batch of sentences
+    currentFootnoteIds_.clear();
+    if (ch && !ch->sentenceFootnoteIds.empty()) {
+        for (std::uint32_t s = 0; s < batchedSentenceCount_; ++s) {
+            const std::size_t si = progress_.sentenceIndex + s;
+            if (si < ch->sentenceFootnoteIds.size()) {
+                for (const std::string& fnId : ch->sentenceFootnoteIds[si]) {
+                    currentFootnoteIds_.push_back(fnId);
+                }
+            }
         }
     }
 

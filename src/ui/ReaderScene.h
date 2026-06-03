@@ -71,4 +71,5 @@ private:
     mutable std::vector<int> cachedVisibleRevealWidths_;
     bool renderRequested_ = false;
     std::uint32_t batchedSentenceCount_ = 1;
+    std::vector<std::string> currentFootnoteIds_;
 };

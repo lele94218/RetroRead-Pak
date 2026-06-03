@@ -16,6 +16,7 @@ set(RETROREAD_SOURCES
     src/core/SettingsStore.cpp
     src/epub/EpubCompiler.cpp
     src/epub/EpubArchive.cpp
+    src/epub/EpubKernel.cpp
     src/epub/HtmlTextExtractor.cpp
     src/platform/PlatformFactory.cpp
     src/platform/sdl/SDLRenderer.cpp

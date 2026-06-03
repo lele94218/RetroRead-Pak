@@ -164,3 +164,18 @@ TEST_F(EpubKernelTest, ChineseAnnotationStyle) {
     // Content should be about 本回回目
     EXPECT_FALSE(it->second.empty());
 }
+
+TEST_F(EpubKernelTest, FootnoteNotDuplicated) {
+    // A paragraph with multiple footnote refs should assign each to the correct sentence
+    // part0012 has a paragraph with m72,m73,m74,m75,m76 - each should appear only once
+    const auto& ch = kernel.chapter(2); // part0012
+
+    // Count how many sentences have m73
+    int m73Count = 0;
+    for (const auto& fnIds : ch.sentenceFootnoteIds) {
+        for (const std::string& id : fnIds) {
+            if (id == "m73") ++m73Count;
+        }
+    }
+    EXPECT_EQ(m73Count, 1) << "m73 should appear in exactly one sentence, not " << m73Count;
+}
