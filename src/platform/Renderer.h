@@ -63,4 +63,5 @@ public:
 
     virtual int screenWidth() const = 0;
     virtual int screenHeight() const = 0;
+    virtual int fullScreenHeight() const { return screenHeight(); }
 };

@@ -8,6 +8,8 @@
 #include <sstream>
 #include <utility>
 
+#include <SDL.h>
+#include "platform/sdl/SDLInput.h"
 #include "ui/BookListScene.h"
 
 #ifndef _WIN32
@@ -70,20 +72,42 @@ Application::Application(
 
 bool Application::initialize() {
     if (!renderer_ || !input_ || !fileSystem_ || !clock_) {
+        SDL_Log("RetroRead: null platform component");
         return false;
     }
 
-    if (!renderer_->initialize() || !input_->initialize() || !fileSystem_->initialize()) {
+    if (!renderer_->initialize()) {
+        SDL_Log("RetroRead: renderer init FAILED");
         return false;
     }
+    SDL_Log("RetroRead: renderer OK (%dx%d)", renderer_->screenWidth(), renderer_->screenHeight());
+
+    if (!input_->initialize()) {
+        SDL_Log("RetroRead: input init FAILED");
+        return false;
+    }
+    SDL_Log("RetroRead: input OK");
+
+    if (!fileSystem_->initialize()) {
+        SDL_Log("RetroRead: filesystem init FAILED");
+        return false;
+    }
+    SDL_Log("RetroRead: filesystem OK (books=%s)", fileSystem_->booksPath().c_str());
+
     textBlipPlayer_.initialize();
 
     settings_ = ReaderSettings{};
     settingsStore_.load(*fileSystem_, settings_);
     library_.scan(*fileSystem_);
+    SDL_Log("RetroRead: found %d books", static_cast<int>(library_.books().size()));
     progressStore_.load(*fileSystem_);
+    virtualButtons_.layout(renderer_->screenWidth(), renderer_->screenHeight(), renderer_->fullScreenHeight());
+    if (auto* sdlInput = dynamic_cast<SDLInput*>(input_.get())) {
+        sdlInput->setVirtualButtons(&virtualButtons_);
+    }
     sceneManager_.setRoot(std::make_unique<BookListScene>(*this));
     running_ = true;
+    SDL_Log("RetroRead: init complete");
     return true;
 }
 
@@ -117,6 +141,7 @@ void Application::run() {
         if (shouldRender) {
             renderer_->beginFrame();
             sceneManager_.render(*renderer_);
+            virtualButtons_.render(*renderer_);
             if (input_->wasPressed(Action::Screenshot)) {
                 const std::string screenshotPath = buildScreenshotPath();
                 if (!screenshotPath.empty()) {

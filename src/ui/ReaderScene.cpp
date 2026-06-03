@@ -6,6 +6,10 @@
 #include <sstream>
 #include <utility>
 
+#include <SDL.h>
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
 #include "app/Application.h"
 #include "platform/Input.h"
 #include "platform/Renderer.h"
@@ -276,10 +280,13 @@ ReaderScene::ReaderScene(Application& app, BookScript book, ReadingProgress prog
 }
 
 void ReaderScene::onEnter() {
+    SDL_Log("RetroRead: ReaderScene entered, chapter=%d sentence=%d",
+            static_cast<int>(progress_.chapterIndex), static_cast<int>(progress_.sentenceIndex));
     maxVisibleLines_ = 4;
     invalidateLayoutCache();
     renderRequested_ = true;
     revealCurrentSentence();
+    SDL_Log("RetroRead: ReaderScene ready");
 }
 
 void ReaderScene::onExit() {
@@ -317,9 +324,10 @@ void ReaderScene::render(Renderer& renderer) {
     const int screenHeight = renderer.screenHeight();
     const int horizontalMargin = std::max(18, screenWidth / 24);
     const int headerWidth = std::max(240, screenWidth - horizontalMargin * 2);
-    const int dialogueHeight = uiSpacing(std::max(180, std::min(236, screenHeight / 3)),
-                                         std::max(300, std::min(420, (screenHeight * 11) / 20)));
-    const int dialogueY = screenHeight - dialogueHeight - std::max(18, screenHeight / 28);
+    const int dialogueHeight = uiSpacing(
+        std::max(180, std::min(screenHeight * 3 / 5, screenHeight - 120)),
+        std::max(300, std::min(screenHeight * 3 / 5, screenHeight - 160)));
+    const int dialogueY = screenHeight - dialogueHeight - std::max(12, screenHeight / 36);
     const int dialogueWidth = screenWidth - horizontalMargin * 2;
     dialogueBox_.setBounds(Rect{horizontalMargin, dialogueY, dialogueWidth, dialogueHeight});
 
@@ -486,9 +494,11 @@ void ReaderScene::updateTyping(float dt) {
     if (advanced > 0) {
         renderRequested_ = true;
     }
-    if (app_.settings().textVoiceMode == TextVoiceMode::Fixed) {
+#if !defined(__APPLE__) || !TARGET_OS_IOS
+    const TextVoiceMode voiceMode = app_.settings().textVoiceMode;
+    if (voiceMode == TextVoiceMode::Fixed && !typer_.codepoints().empty()) {
         app_.textBlipPlayer().syncVisibleCodepoints(typer_.codepoints(), typer_.visibleChars());
-    } else if (app_.settings().textVoiceMode == TextVoiceMode::FollowText && advanced > 0) {
+    } else if (voiceMode == TextVoiceMode::FollowText && advanced > 0) {
         const auto& codepoints = typer_.codepoints();
         for (int i = 0; i < advanced; ++i) {
             const std::size_t index = previousVisible + static_cast<std::size_t>(i);
@@ -498,6 +508,7 @@ void ReaderScene::updateTyping(float dt) {
             }
         }
     }
+#endif
     if (!typer_.isComplete()) {
         return;
     }
@@ -756,15 +767,16 @@ std::size_t ReaderScene::visibleCharsOnCurrentPage(Renderer& renderer) const {
 std::size_t ReaderScene::visibleLineCapacity(Renderer& renderer) const {
     const ReaderSettings& settings = app_.settings();
     const int screenHeight = renderer.screenHeight();
-    const int dialogueHeight = uiSpacing(std::max(180, std::min(236, screenHeight / 3)),
-                                         std::max(300, std::min(420, (screenHeight * 11) / 20)));
+    const int dialogueHeight = uiSpacing(
+        std::max(180, std::min(screenHeight * 3 / 5, screenHeight - 120)),
+        std::max(300, std::min(screenHeight * 3 / 5, screenHeight - 160)));
     const int titleHeight = renderer.lineHeight(30, settings.fontPreset);
     const int bodyHeight = renderer.lineHeight(readerBodyFont(settings), settings.fontPreset);
     const int hintHeight = renderer.lineHeight(24, settings.fontPreset);
     const int reserved =
         16 + titleHeight + uiSpacing(14, 22) + hintHeight + uiSpacing(10, 14) + uiSpacing(10, 16);
     const int availableBody = std::max(bodyHeight, dialogueHeight - reserved);
-    const int lineStep = bodyHeight + uiSpacing(6, 12);
+    const int lineStep = bodyHeight + uiSpacing(4, 8);
     return std::max<std::size_t>(1, static_cast<std::size_t>(std::max(1, availableBody / std::max(1, lineStep))));
 }
 

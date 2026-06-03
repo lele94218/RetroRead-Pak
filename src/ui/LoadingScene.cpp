@@ -6,6 +6,7 @@
 #include <cctype>
 #include <filesystem>
 #include <utility>
+#include <SDL.h>
 
 #include "app/Application.h"
 #include "core/ProgressStore.h"
@@ -127,14 +128,17 @@ void LoadingScene::update(float dt) {
 }
 
 void LoadingScene::finishLoading() {
+    SDL_Log("RetroRead: loading book: %s", bookPath_.c_str());
     BookScript book;
     const bool loaded = target_ == LoadingTarget::Chapters ? loadChapterList(app_, bookPath_, book)
                                                            : loadOrCompileBook(app_, bookPath_, book);
     if (!loaded || book.chapters.empty()) {
+        SDL_Log("RetroRead: load FAILED (loaded=%d chapters=%d)", loaded, static_cast<int>(book.chapters.size()));
         failed_ = true;
         errorMessage_ = "Unable to open this book.";
         return;
     }
+    SDL_Log("RetroRead: loaded OK, %d chapters", static_cast<int>(book.chapters.size()));
 
     if (target_ == LoadingTarget::Chapters) {
         app_.sceneManager().replace(std::make_unique<ChapterScene>(app_, std::move(book)));

@@ -76,6 +76,7 @@ void TextBlipPlayer::reset() {
 }
 
 void TextBlipPlayer::playCodepoint(const std::string& codepoint, const std::string& previousCodepoint) {
+    if (deviceId_ == 0) return;
     if (timerMs_ > 0.0f || !isSpeakable(codepoint, previousCodepoint)) {
         timerMs_ = std::max(timerMs_, pauseAfter(codepoint));
         return;
@@ -87,6 +88,7 @@ void TextBlipPlayer::playCodepoint(const std::string& codepoint, const std::stri
 }
 
 void TextBlipPlayer::syncVisibleCodepoints(const std::vector<std::string>& codepoints, std::size_t visibleCount) {
+    if (deviceId_ == 0) return;
     const std::size_t cappedVisible = std::min(visibleCount, codepoints.size());
     if (spokenVisibleCount_ > cappedVisible) {
         spokenVisibleCount_ = cappedVisible;

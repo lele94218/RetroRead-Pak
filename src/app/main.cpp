@@ -3,10 +3,13 @@
 #include <string>
 #include <vector>
 
+#include <SDL.h>
 #include "app/Application.h"
 #include "epub/EpubCompiler.h"
 #include "platform/PlatformFactory.h"
+#ifndef RETROREAD_NO_NEXTUI
 #include "platform/nextui/NextUIBindings.h"
+#endif
 
 namespace {
 int runProbe(const std::string& epubPath) {
@@ -45,10 +48,12 @@ int main(int argc, char** argv) {
     }
 
     PlatformBackend backend = PlatformBackend::SDL;
+#ifndef RETROREAD_NO_NEXTUI
     if (args.size() >= 2 && args[1] == "--nextui") {
         backend = PlatformBackend::NextUI;
         installNextUIBindings();
     }
+#endif
 
     PlatformServices platform = PlatformFactory::create(backend);
 
@@ -58,11 +63,15 @@ int main(int argc, char** argv) {
         std::move(platform.fileSystem),
         std::move(platform.clock));
 
+    SDL_Log("RetroRead: starting initialize...");
     if (!app.initialize()) {
+        SDL_Log("RetroRead: initialize FAILED");
         return 1;
     }
 
+    SDL_Log("RetroRead: initialize OK, entering run loop");
     app.run();
     app.shutdown();
+    SDL_Log("RetroRead: shutdown complete");
     return 0;
 }

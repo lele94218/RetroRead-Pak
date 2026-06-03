@@ -52,6 +52,7 @@ public:
 
     int screenWidth() const override;
     int screenHeight() const override;
+    int fullScreenHeight() const override;
 
 private:
     struct CachedTextTexture {
@@ -77,6 +78,8 @@ private:
 
     int width_ = 1280;
     int height_ = 720;
+    int fullHeight_ = 720;
+    int displayScale_ = 1;
     SDL_Window* window_ = nullptr;
     SDL_Renderer* renderer_ = nullptr;
     std::unordered_map<std::string, CachedTextTexture> textTextureCache_;

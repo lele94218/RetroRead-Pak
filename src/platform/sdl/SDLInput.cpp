@@ -4,6 +4,8 @@
 #include <cstdlib>
 #include <string>
 
+#include "ui/VirtualButtons.h"
+
 namespace {
 void triggerScreenshotCombo(std::array<bool, 14>& pressed, std::array<bool, 14>& held) {
     const std::size_t startIndex = static_cast<std::size_t>(Action::Start);
@@ -103,6 +105,12 @@ void SDLInput::poll() {
             break;
         case SDL_JOYHATMOTION:
             handleJoystickHat(event.jhat.value);
+            break;
+        case SDL_FINGERDOWN:
+            handleFingerDown(event.tfinger);
+            break;
+        case SDL_FINGERUP:
+            handleFingerUp(event.tfinger);
             break;
         default:
             break;
@@ -531,4 +539,41 @@ bool SDLInput::tryMapJoystickButton(Uint8 button, Action& action) const {
         return true;
     }
     return false;
+}
+
+void SDLInput::handleFingerDown(const SDL_TouchFingerEvent& finger) {
+    touchStartX_ = finger.x;
+    touchStartY_ = finger.y;
+    touchActive_ = true;
+}
+
+void SDLInput::handleFingerUp(const SDL_TouchFingerEvent& finger) {
+    if (!touchActive_) {
+        return;
+    }
+    touchActive_ = false;
+
+    const float dx = finger.x - touchStartX_;
+    const float dy = finger.y - touchStartY_;
+    constexpr float kSwipeThreshold = 0.15f;
+
+    if (std::abs(dx) > kSwipeThreshold || std::abs(dy) > kSwipeThreshold) {
+        return;
+    }
+
+    // Virtual gamepad hit test
+    if (virtualButtons_) {
+        VirtualButtonHit hit = virtualButtons_->hitTest(finger.x, finger.y);
+        if (hit.handled) {
+            setPressed(hit.action);
+            return;
+        }
+    }
+
+    // Top area: tap right = next, tap left = previous
+    if (finger.x > 0.5f) {
+        setPressed(Action::Confirm);
+    } else {
+        setPressed(Action::Left);
+    }
 }

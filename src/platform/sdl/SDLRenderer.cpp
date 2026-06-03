@@ -6,6 +6,10 @@
 #include <filesystem>
 #include <utility>
 
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
+
 #include "text/Utf8.h"
 
 namespace fs = std::filesystem;
@@ -117,7 +121,9 @@ bool SDLRenderer::initialize() {
 #endif
 
     Uint32 windowFlags = SDL_WINDOW_SHOWN;
-#ifdef NEXTREADING_TG5040
+#if defined(__APPLE__) && TARGET_OS_IOS
+    windowFlags |= SDL_WINDOW_FULLSCREEN | SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALLOW_HIGHDPI;
+#elif defined(NEXTREADING_TG5040)
     windowFlags |= SDL_WINDOW_FULLSCREEN;
 #endif
 
@@ -133,6 +139,14 @@ bool SDLRenderer::initialize() {
         return false;
     }
 
+#if defined(__APPLE__) && TARGET_OS_IOS
+    SDL_GetWindowSize(window_, &width_, &height_);
+    fullHeight_ = height_;
+    if (height_ > width_) {
+        height_ = fullHeight_ / 2;
+    }
+#endif
+
     renderer_ = SDL_CreateRenderer(window_, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (renderer_ == nullptr) {
         renderer_ = SDL_CreateRenderer(window_, -1, SDL_RENDERER_SOFTWARE);
@@ -142,18 +156,29 @@ bool SDLRenderer::initialize() {
         return false;
     }
 
-#ifdef NEXTREADING_TG5040
+#if defined(__APPLE__) && TARGET_OS_IOS
+    {
+        int pixelW = 0, pixelH = 0;
+        SDL_GetRendererOutputSize(renderer_, &pixelW, &pixelH);
+        displayScale_ = (width_ > 0) ? std::max(1, pixelW / width_) : 1;
+        SDL_RenderSetLogicalSize(renderer_, width_, fullHeight_);
+        SDL_Log("RetroRead: logical %dx%d pixel %dx%d scale %d content %d",
+                width_, fullHeight_, pixelW, pixelH, displayScale_, height_);
+    }
+#elif defined(NEXTREADING_TG5040)
     SDL_ShowCursor(SDL_DISABLE);
     SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "0");
     SDL_SetWindowFullscreen(window_, SDL_WINDOW_FULLSCREEN);
     SDL_RenderSetLogicalSize(renderer_, width_, height_);
 #endif
 
+#if !defined(__APPLE__) || !TARGET_OS_IOS
     SDL_SetHint(SDL_HINT_GRAB_KEYBOARD, "1");
     SDL_SetWindowGrab(window_, SDL_TRUE);
+#endif
     SDL_RaiseWindow(window_);
 
-    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
     SDL_SetRenderDrawBlendMode(renderer_, SDL_BLENDMODE_BLEND);
 #ifndef NEXTREADING_NO_SDL_TTF
     return !findFontPath(FontPreset::Normal).empty();
@@ -297,12 +322,12 @@ void SDLRenderer::drawTextReveal(
     const int clampedReveal = std::max(0, std::min(revealWidth, target.w));
     const int clampedSoft = std::max(0, std::min(softenWidth, clampedReveal));
     const int solidWidth = std::max(0, clampedReveal - clampedSoft);
-    const int scale = renderScale(fontSize, fontPreset);
+    const int texScale = std::max(1, displayScale_);
 
     SDL_SetTextureBlendMode(cached->texture, SDL_BLENDMODE_BLEND);
 
     if (solidWidth > 0) {
-        SDL_Rect src{0, 0, std::max(1, solidWidth / std::max(1, scale)), target.h / std::max(1, scale)};
+        SDL_Rect src{0, 0, std::max(1, solidWidth * texScale), target.h * texScale};
         SDL_Rect dst{target.x, target.y, solidWidth, target.h};
         SDL_SetTextureAlphaMod(cached->texture, color.a);
         SDL_RenderCopy(renderer_, cached->texture, &src, &dst);
@@ -328,10 +353,10 @@ void SDLRenderer::drawTextReveal(
                 continue;
             }
             SDL_Rect src{
-                std::max(0, (solidWidth + consumed) / std::max(1, scale)),
+                std::max(0, (solidWidth + consumed) * texScale),
                 0,
-                std::max(1, bandWidth / std::max(1, scale)),
-                target.h / std::max(1, scale)};
+                std::max(1, bandWidth * texScale),
+                target.h * texScale};
             SDL_Rect dst{target.x + solidWidth + consumed, target.y, bandWidth, target.h};
             SDL_SetTextureAlphaMod(cached->texture, bandAlpha[i]);
             SDL_RenderCopy(renderer_, cached->texture, &src, &dst);
@@ -363,7 +388,8 @@ SDLRenderer::CachedTextTexture* SDLRenderer::cachedTextTexture(
     CachedTextTexture cached;
 
 #ifndef NEXTREADING_NO_SDL_TTF
-    TTF_Font* font = fontForSize(fontSize, fontPreset);
+    const int hiDpiFontSize = fontSize * displayScale_;
+    TTF_Font* font = fontForSize(hiDpiFontSize, fontPreset);
     if (font == nullptr) {
         return nullptr;
     }
@@ -379,13 +405,14 @@ SDLRenderer::CachedTextTexture* SDLRenderer::cachedTextTexture(
         return nullptr;
     }
 
-    if (fontPreset == FontPreset::Pixel) {
+    if (fontPreset == FontPreset::Pixel && displayScale_ <= 1) {
         SDL_SetTextureScaleMode(cached.texture, SDL_ScaleModeNearest);
+    } else {
+        SDL_SetTextureScaleMode(cached.texture, SDL_ScaleModeLinear);
     }
 
-    const int scale = renderScale(fontSize, fontPreset);
-    cached.width = surface->w * scale;
-    cached.height = surface->h * scale;
+    cached.width = surface->w / displayScale_;
+    cached.height = surface->h / displayScale_;
     SDL_FreeSurface(surface);
 #else
     FT_Face face = faceForPreset(fontPreset);
@@ -493,8 +520,9 @@ void SDLRenderer::clearTextTextureCache() {
 
 int SDLRenderer::measureTextWidth(const std::string& text, int fontSize, FontPreset fontPreset) const {
 #ifndef NEXTREADING_NO_SDL_TTF
+    const int hiDpiFontSize = fontSize * displayScale_;
     auto* self = const_cast<SDLRenderer*>(this);
-    TTF_Font* font = self->fontForSize(fontSize, fontPreset);
+    TTF_Font* font = self->fontForSize(hiDpiFontSize, fontPreset);
     if (font == nullptr || text.empty()) {
         return 0;
     }
@@ -503,7 +531,7 @@ int SDLRenderer::measureTextWidth(const std::string& text, int fontSize, FontPre
     if (TTF_SizeUTF8(font, text.c_str(), &width, nullptr) != 0) {
         return 0;
     }
-    return width * renderScale(fontSize, fontPreset);
+    return width / displayScale_;
 #else
     if (text.empty()) {
         return 0;
@@ -536,9 +564,10 @@ int SDLRenderer::measureTextWidth(const std::string& text, int fontSize, FontPre
 
 int SDLRenderer::lineHeight(int fontSize, FontPreset fontPreset) const {
 #ifndef NEXTREADING_NO_SDL_TTF
+    const int hiDpiFontSize = fontSize * displayScale_;
     auto* self = const_cast<SDLRenderer*>(this);
-    TTF_Font* font = self->fontForSize(fontSize, fontPreset);
-    return font != nullptr ? TTF_FontLineSkip(font) * renderScale(fontSize, fontPreset) : fontSize + 6;
+    TTF_Font* font = self->fontForSize(hiDpiFontSize, fontPreset);
+    return font != nullptr ? TTF_FontLineSkip(font) / displayScale_ : fontSize + 6;
 #else
     FT_Face face = const_cast<SDLRenderer*>(this)->faceForPreset(fontPreset);
     if (face == nullptr) {
@@ -584,6 +613,10 @@ int SDLRenderer::screenHeight() const {
     return height_;
 }
 
+int SDLRenderer::fullScreenHeight() const {
+    return fullHeight_;
+}
+
 #ifndef NEXTREADING_NO_SDL_TTF
 TTF_Font* SDLRenderer::fontForSize(int fontSize, FontPreset fontPreset) {
     const int key = fontCacheKey(fontSize, fontPreset);
@@ -615,11 +648,14 @@ TTF_Font* SDLRenderer::fontForSize(int fontSize, FontPreset fontPreset) {
 std::string SDLRenderer::findFontPath(FontPreset fontPreset) const {
     const char* assetsRoot = std::getenv("NEXTREADING_ASSETS_PATH");
 
-    const std::array<std::string, 11> normalCandidates{
+    const std::array<std::string, 14> normalCandidates{
         "",
         assetsRoot != nullptr ? std::string(assetsRoot) + "/fonts/ui.ttf" : "",
         assetsRoot != nullptr ? std::string(assetsRoot) + "/fonts/ui.ttc" : "",
         assetsRoot != nullptr ? std::string(assetsRoot) + "/fonts/NotoSansCJK-Regular.ttc" : "",
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/LanguageSupport/PingFang.ttc",
+        "/System/Library/Fonts/Helvetica.ttc",
         "/mnt/c/Windows/Fonts/msyh.ttc",
         "/mnt/c/Windows/Fonts/simhei.ttf",
         "/mnt/c/Windows/Fonts/msyhbd.ttc",
@@ -629,7 +665,7 @@ std::string SDLRenderer::findFontPath(FontPreset fontPreset) const {
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     };
 
-    const std::array<std::string, 11> pixelCandidates = normalCandidates;
+    const std::array<std::string, 14> pixelCandidates = normalCandidates;
 
     const auto& candidates = fontPreset == FontPreset::Pixel ? pixelCandidates : normalCandidates;
 

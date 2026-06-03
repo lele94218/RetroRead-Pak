@@ -135,10 +135,12 @@ void BookListScene::update(float dt) {
         clampScroll();
     }
 
+#ifndef RETROREAD_NO_NEXTUI
     if (input.wasPressed(Action::Back) || input.wasPressed(Action::OpenMenu)) {
         app_.requestQuit();
         return;
     }
+#endif
 
     if (input.wasPressed(Action::Confirm)) {
         if (books_.empty()) {

@@ -15,6 +15,7 @@
 #include "platform/Input.h"
 #include "platform/Renderer.h"
 #include "ui/SceneManager.h"
+#include "ui/VirtualButtons.h"
 
 class Application {
 public:
@@ -72,4 +73,5 @@ private:
     std::unique_ptr<FileSystem> fileSystem_;
     std::unique_ptr<Clock> clock_;
     SceneManager sceneManager_;
+    VirtualButtons virtualButtons_;
 };

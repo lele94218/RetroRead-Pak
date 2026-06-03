@@ -6,10 +6,12 @@
 #include "platform/FileSystem.h"
 #include "platform/Input.h"
 #include "platform/Renderer.h"
+#ifndef RETROREAD_NO_NEXTUI
 #include "platform/nextui/NextUIClock.h"
 #include "platform/nextui/NextUIFileSystem.h"
 #include "platform/nextui/NextUIInput.h"
 #include "platform/nextui/NextUIRenderer.h"
+#endif
 #include "platform/sdl/SDLClock.h"
 #include "platform/sdl/SDLFileSystem.h"
 #include "platform/sdl/SDLInput.h"
@@ -17,6 +19,7 @@
 
 PlatformServices PlatformFactory::create(PlatformBackend backend) {
     switch (backend) {
+#ifndef RETROREAD_NO_NEXTUI
     case PlatformBackend::NextUI:
         return PlatformServices{
             std::make_unique<NextUIRenderer>(),
@@ -24,6 +27,7 @@ PlatformServices PlatformFactory::create(PlatformBackend backend) {
             std::make_unique<NextUIFileSystem>(),
             std::make_unique<NextUIClock>(),
         };
+#endif
     case PlatformBackend::SDL:
     default:
         return PlatformServices{

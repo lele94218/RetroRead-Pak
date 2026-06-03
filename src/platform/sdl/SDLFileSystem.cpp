@@ -7,6 +7,14 @@
 #include <fstream>
 #include <sstream>
 
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#if TARGET_OS_IOS
+extern std::string iosDocumentsPath();
+extern std::string iosBundleResourcePath();
+#endif
+#endif
+
 namespace fs = std::filesystem;
 
 namespace {
@@ -24,11 +32,19 @@ std::string readEnvPath(const char* name, const std::string& fallback) {
 }
 
 bool SDLFileSystem::initialize() {
+#if defined(__APPLE__) && TARGET_OS_IOS
+    rootPath_ = iosDocumentsPath();
+    booksPath_ = rootPath_;
+    cachePath_ = rootPath_ + "/BooksCache";
+    savesPath_ = rootPath_ + "/Saves/RetroRead";
+    assetsPath_ = iosBundleResourcePath() + "/assets";
+#else
     rootPath_ = readEnvPath("NEXTREADING_HOME", ".");
     booksPath_ = readEnvPath("NEXTREADING_BOOKS_PATH", rootPath_ + "/Books");
     cachePath_ = readEnvPath("NEXTREADING_CACHE_PATH", rootPath_ + "/BooksCache");
     savesPath_ = readEnvPath("NEXTREADING_SAVES_PATH", rootPath_ + "/Saves/RetroRead");
     assetsPath_ = readEnvPath("NEXTREADING_ASSETS_PATH", rootPath_ + "/assets");
+#endif
 
     createDirectories(booksPath_);
     createDirectories(cachePath_);

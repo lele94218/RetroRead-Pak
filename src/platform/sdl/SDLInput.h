@@ -6,9 +6,13 @@
 
 #include "platform/Input.h"
 
+class VirtualButtons;
+
 class SDLInput final : public Input {
 public:
     SDLInput();
+
+    void setVirtualButtons(VirtualButtons* vb) { virtualButtons_ = vb; }
 
     bool initialize() override;
     void shutdown() override;
@@ -33,8 +37,14 @@ private:
     void handleJoystickButtonUp(Uint8 button);
     void handleJoystickHat(Uint8 value);
     bool tryMapJoystickButton(Uint8 button, Action& action) const;
+    void handleFingerDown(const SDL_TouchFingerEvent& finger);
+    void handleFingerUp(const SDL_TouchFingerEvent& finger);
 
+    VirtualButtons* virtualButtons_ = nullptr;
     bool quitRequested_ = false;
+    float touchStartX_ = 0.0f;
+    float touchStartY_ = 0.0f;
+    bool touchActive_ = false;
     SDL_GameController* controller_ = nullptr;
     SDL_Joystick* joystick_ = nullptr;
     bool preferJoystick_ = false;
