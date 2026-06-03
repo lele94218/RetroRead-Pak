@@ -296,6 +296,7 @@ void ReaderScene::onExit() {
 void ReaderScene::update(float dt) {
     app_.textBlipPlayer().update(dt);
     handleInput();
+    if (app_.sceneManager().wasReplaced()) return;
 
     switch (state_) {
     case ReaderState::Typing:
@@ -495,7 +496,6 @@ void ReaderScene::updateTyping(float dt) {
     if (advanced > 0) {
         renderRequested_ = true;
     }
-#if !defined(__APPLE__) || !TARGET_OS_IOS
     const TextVoiceMode voiceMode = app_.settings().textVoiceMode;
     if (voiceMode == TextVoiceMode::Fixed && !typer_.codepoints().empty()) {
         app_.textBlipPlayer().syncVisibleCodepoints(typer_.codepoints(), typer_.visibleChars());
@@ -509,7 +509,6 @@ void ReaderScene::updateTyping(float dt) {
             }
         }
     }
-#endif
     if (!typer_.isComplete()) {
         return;
     }

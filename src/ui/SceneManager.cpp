@@ -17,7 +17,9 @@ void SceneManager::replace(std::unique_ptr<Scene> scene) {
         current_->onExit();
     }
 
+    pendingDestroy_ = std::move(current_);
     current_ = std::move(scene);
+    wasReplaced_ = true;
     if (current_) {
         current_->onEnter();
         renderRequested_ = true;
@@ -25,9 +27,11 @@ void SceneManager::replace(std::unique_ptr<Scene> scene) {
 }
 
 void SceneManager::update(float dt) {
+    wasReplaced_ = false;
     if (current_) {
         current_->update(dt);
     }
+    pendingDestroy_.reset();
 }
 
 void SceneManager::render(Renderer& renderer) {

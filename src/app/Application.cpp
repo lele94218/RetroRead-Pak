@@ -95,7 +95,16 @@ bool Application::initialize() {
     }
     SDL_Log("RetroRead: filesystem OK (books=%s)", fileSystem_->booksPath().c_str());
 
-    textBlipPlayer_.initialize();
+#if defined(__APPLE__) && TARGET_OS_IOS
+    {
+        extern void iosStartVolumeListener();
+        iosStartVolumeListener();
+    }
+#endif
+    {
+        bool audioOk = textBlipPlayer_.initialize();
+        SDL_Log("RetroRead: audio device %s", audioOk ? "OK" : "FAILED");
+    }
 
     settings_ = ReaderSettings{};
     settingsStore_.load(*fileSystem_, settings_);
@@ -106,12 +115,6 @@ bool Application::initialize() {
     if (auto* sdlInput = dynamic_cast<SDLInput*>(input_.get())) {
         sdlInput->setVirtualButtons(&virtualButtons_);
     }
-#if defined(__APPLE__) && TARGET_OS_IOS
-    {
-        extern void iosStartVolumeListener();
-        iosStartVolumeListener();
-    }
-#endif
     sceneManager_.setRoot(std::make_unique<BookListScene>(*this));
     running_ = true;
     SDL_Log("RetroRead: init complete");

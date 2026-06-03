@@ -12,6 +12,8 @@ public:
 
     void setRoot(std::unique_ptr<Scene> scene);
     void replace(std::unique_ptr<Scene> scene);
+    bool wasReplaced() const { return wasReplaced_; }
+    void clearReplaced() { wasReplaced_ = false; }
 
     void update(float dt);
     void render(Renderer& renderer);
@@ -20,5 +22,7 @@ public:
 
 private:
     std::unique_ptr<Scene> current_;
+    std::unique_ptr<Scene> pendingDestroy_;
     bool renderRequested_ = false;
+    bool wasReplaced_ = false;
 };
