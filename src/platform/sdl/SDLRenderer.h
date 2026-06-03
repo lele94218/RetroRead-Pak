@@ -53,6 +53,7 @@ public:
     int screenWidth() const override;
     int screenHeight() const override;
     int fullScreenHeight() const override;
+    int topInset() const override;
 
 private:
     struct CachedTextTexture {
@@ -79,6 +80,7 @@ private:
     int width_ = 1280;
     int height_ = 720;
     int fullHeight_ = 720;
+    int topInset_ = 0;
     int displayScale_ = 1;
     SDL_Window* window_ = nullptr;
     SDL_Renderer* renderer_ = nullptr;

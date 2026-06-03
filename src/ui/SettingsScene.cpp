@@ -103,7 +103,7 @@ void SettingsScene::update(float dt) {
         clampScroll();
     }
 
-    if (input.wasPressed(Action::Down) && selectedIndex_ < 5) {
+    if (input.wasPressed(Action::Down) && selectedIndex_ < 6) {
         ++selectedIndex_;
         clampScroll();
     }
@@ -118,6 +118,9 @@ void SettingsScene::update(float dt) {
 }
 
 void SettingsScene::render(Renderer& renderer) {
+    const int screenWidth = renderer.screenWidth();
+    const int margin = std::max(18, screenWidth / 24);
+    const int contentWidth = screenWidth - margin * 2;
     const ReaderSettings& settings = app_.settings();
     const ThemePalette palette = themePalette(settings.themePreset);
 
@@ -125,58 +128,61 @@ void SettingsScene::render(Renderer& renderer) {
 
     renderer.drawText(
         "Reader Settings",
-        Rect{60, 18, 860, uiSpacing(40, 70)},
+        Rect{margin, 18, contentWidth, uiSpacing(40, 70)},
         palette.headerText,
         uiFont(28, 42),
         TextAlign::Left,
         settings.fontPreset);
 
     renderer.drawText(
-        "Up/Down: select  Left/Right: change  Start/Menu: back",
-        Rect{60, 92, 920, uiSpacing(24, 32)},
+        "Up/Down: select  Left/Right: change  Start: back",
+        Rect{margin, uiSpacing(60, 92), contentWidth, uiSpacing(24, 32)},
         palette.secondaryText,
-        uiFont(16, 22),
+        uiFont(14, 22),
         TextAlign::Left,
         settings.fontPreset);
 
     if (settings.performanceMode == PerformanceMode::Hud) {
         renderer.drawText(
             app_.performanceHudText(),
-            Rect{renderer.screenWidth() - 360, 18, 320, 24},
+            Rect{screenWidth - margin - 200, 18, 200, 24},
             palette.secondaryText,
             uiFont(14, 18),
             TextAlign::Right,
             settings.fontPreset);
     }
 
-    const std::string rows[6] = {
-        "Reader Font Size: " + std::to_string(settings.fontSize),
+    const std::string rows[7] = {
+        "Font Size: " + std::to_string(settings.fontSize),
         "Text Speed: " + std::to_string(settings.textSpeed) + " ms",
-        std::string("Text Voice: ") + textVoiceModeName(settings.textVoiceMode),
+        "Sentences: " + std::to_string(settings.sentencesPerPage),
+        std::string("Voice: ") + textVoiceModeName(settings.textVoiceMode),
         std::string("Theme: ") + themePresetName(settings.themePreset),
         std::string("Font: ") + fontPresetName(settings.fontPreset),
-        std::string("Performance: ") + performanceModeName(settings.performanceMode),
+        std::string("Perf: ") + performanceModeName(settings.performanceMode),
     };
 
-    int y = uiSpacing(170, 200);
+    const int rowH = uiSpacing(46, 76);
+    const int rowGap = uiSpacing(4, 8);
+    int y = uiSpacing(100, 140);
     const int startIndex = scrollOffset_;
-    const int endIndex = std::min(6, startIndex + 5);
+    const int endIndex = std::min(7, startIndex + 5);
     for (int i = startIndex; i < endIndex; ++i) {
         const bool selected = i == selectedIndex_;
-        const Rect rowRect{72, y - uiSpacing(18, 26), 884, uiSpacing(62, 98)};
+        const Rect rowRect{margin, y, contentWidth, rowH};
         if (selected) {
             renderer.fillRect(rowRect, palette.selectionFill);
             renderer.drawRect(rowRect, palette.selectionOutline);
         }
-        const int textTop = rowRect.y + (rowRect.h - uiSpacing(30, 52)) / 2;
+        const int textTop = rowRect.y + (rowRect.h - uiSpacing(24, 40)) / 2;
         renderer.drawText(
             rows[i],
-            Rect{88, textTop, 860, uiSpacing(30, 52)},
+            Rect{margin + 12, textTop, contentWidth - 24, uiSpacing(24, 40)},
             selected ? palette.selectionText : palette.primaryText,
-            uiFont(22, 40),
+            uiFont(20, 36),
             TextAlign::Left,
             settings.fontPreset);
-        y += uiSpacing(56, 92);
+        y += rowH + rowGap;
     }
 }
 
@@ -195,26 +201,31 @@ void SettingsScene::applyDelta(int delta) {
         break;
     }
     case 2: {
+        int value = static_cast<int>(settings.sentencesPerPage) + delta;
+        settings.sentencesPerPage = static_cast<std::uint32_t>(std::max(1, std::min(5, value)));
+        break;
+    }
+    case 3: {
         int mode = static_cast<int>(settings.textVoiceMode);
         constexpr int kModeCount = 3;
         mode = (mode + delta + kModeCount) % kModeCount;
         settings.textVoiceMode = static_cast<TextVoiceMode>(mode);
         break;
     }
-    case 3: {
+    case 4: {
         int preset = static_cast<int>(settings.themePreset);
         constexpr int kPresetCount = 7;
         preset = (preset + delta + kPresetCount) % kPresetCount;
         settings.themePreset = static_cast<ThemePreset>(preset);
         break;
     }
-    case 4: {
+    case 5: {
         int preset = static_cast<int>(settings.fontPreset);
         preset = (preset + delta + 2) % 2;
         settings.fontPreset = static_cast<FontPreset>(preset);
         break;
     }
-    case 5:
+    case 6:
         if (delta != 0) {
             int mode = static_cast<int>(settings.performanceMode);
             constexpr int kModeCount = 3;
@@ -235,7 +246,7 @@ void SettingsScene::returnToReader() {
 
 void SettingsScene::clampScroll() {
     const int visibleRows = 5;
-    const int maxOffset = std::max(0, 6 - visibleRows);
+    const int maxOffset = std::max(0, 7 - visibleRows);
     if (selectedIndex_ < scrollOffset_) {
         scrollOffset_ = selectedIndex_;
     }

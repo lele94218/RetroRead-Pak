@@ -70,6 +70,7 @@ struct ReaderSettings {
     ThemePreset themePreset = ThemePreset::ClassicDark;
     FontPreset fontPreset = FontPreset::Normal;
     PerformanceMode performanceMode = PerformanceMode::Off;
+    std::uint32_t sentencesPerPage = 2;
 };
 
 struct BookListItem {

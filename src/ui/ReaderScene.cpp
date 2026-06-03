@@ -324,10 +324,11 @@ void ReaderScene::render(Renderer& renderer) {
     const int screenHeight = renderer.screenHeight();
     const int horizontalMargin = std::max(18, screenWidth / 24);
     const int headerWidth = std::max(240, screenWidth - horizontalMargin * 2);
-    const int dialogueHeight = uiSpacing(
-        std::max(180, std::min(screenHeight * 3 / 5, screenHeight - 120)),
-        std::max(300, std::min(screenHeight * 3 / 5, screenHeight - 160)));
-    const int dialogueY = screenHeight - dialogueHeight - std::max(12, screenHeight / 36);
+    const int headerZoneEnd = uiSpacing(std::max(116, screenHeight / 7), 156);
+    const int bottomMargin = std::max(8, screenHeight / 40);
+    const int availableForDialogue = screenHeight - headerZoneEnd - bottomMargin;
+    const int dialogueHeight = std::max(140, availableForDialogue);
+    const int dialogueY = headerZoneEnd + (screenHeight - headerZoneEnd - bottomMargin - dialogueHeight) / 2;
     const int dialogueWidth = screenWidth - horizontalMargin * 2;
     dialogueBox_.setBounds(Rect{horizontalMargin, dialogueY, dialogueWidth, dialogueHeight});
 
@@ -525,9 +526,56 @@ void ReaderScene::revealCurrentSentence() {
         return;
     }
 
+    Renderer& renderer = app_.renderer();
+    const ReaderSettings& settings = app_.settings();
+    const int bodyFont = readerBodyFont(settings);
+    const int dialogueMargin = std::max(18, renderer.screenWidth() / 24);
+    const int dialogueWidth = renderer.screenWidth() - dialogueMargin * 2;
+    const int safetyPadding = std::max(bodyFont / 2, uiSpacing(18, 30));
+    const int textWidth = std::max(220, dialogueWidth - 48 - safetyPadding);
+    const std::size_t maxLines = visibleLineCapacity(renderer);
+    const std::uint32_t maxBatch = settings.sentencesPerPage;
+
+    std::string combined = sentence->text;
+    batchedSentenceCount_ = 1;
+
+    auto needsSpace = [](const std::string& text) {
+        if (text.empty()) return false;
+        unsigned char last = static_cast<unsigned char>(text.back());
+        return last < 0x80 && (std::isalnum(last) || last == '"' || last == '\'' || last == ')' || last == '.');
+    };
+
+    const Chapter* ch = currentChapter();
+    if (ch && maxBatch > 1) {
+        for (std::uint32_t s = 1; s < maxBatch; ++s) {
+            const std::size_t nextIdx = progress_.sentenceIndex + s;
+            if (nextIdx >= ch->sentences.size()) break;
+            std::string candidate = combined;
+            if (needsSpace(candidate)) candidate += ' ';
+            candidate += ch->sentences[nextIdx].text;
+            auto lines = wrapTextSmart(candidate, textWidth, bodyFont, settings.fontPreset, renderer);
+            if (lines.size() > maxLines) break;
+            combined = std::move(candidate);
+            batchedSentenceCount_ = s + 1;
+        }
+    }
+
+    int speed = static_cast<int>(progress_.textSpeed);
+    {
+        int asciiCount = 0;
+        int totalCount = 0;
+        for (unsigned char c : combined) {
+            if ((c & 0xC0) != 0x80) ++totalCount;
+            if (c < 0x80 && std::isalpha(c)) ++asciiCount;
+        }
+        if (totalCount > 0 && asciiCount * 100 / totalCount > 60) {
+            speed = std::max(1, speed / 5);
+        }
+    }
+
     invalidateLayoutCache();
     app_.textBlipPlayer().reset();
-    typer_.start(sentence->text, static_cast<int>(progress_.textSpeed));
+    typer_.start(combined, speed);
     pageStartLine_ = 0;
     state_ = ReaderState::Typing;
     renderRequested_ = true;
@@ -540,7 +588,8 @@ void ReaderScene::moveToNextSentence() {
         return;
     }
 
-    ++progress_.sentenceIndex;
+    progress_.sentenceIndex += batchedSentenceCount_;
+    batchedSentenceCount_ = 1;
     if (progress_.sentenceIndex >= chapter->sentences.size()) {
         ++progress_.chapterIndex;
         progress_.sentenceIndex = 0;
@@ -562,7 +611,9 @@ void ReaderScene::moveToPreviousSentence() {
     }
 
     if (progress_.sentenceIndex > 0) {
-        --progress_.sentenceIndex;
+        const std::uint32_t step = app_.settings().sentencesPerPage;
+        progress_.sentenceIndex = (progress_.sentenceIndex >= step)
+            ? progress_.sentenceIndex - step : 0;
         pageStartLine_ = 0;
         persistProgress();
         revealCurrentSentence();
@@ -652,8 +703,8 @@ const std::vector<std::string>& ReaderScene::allVisibleLines(Renderer& renderer)
 }
 
 void ReaderScene::refreshLayoutCache(Renderer& renderer) {
-    const Sentence* sentence = currentSentence();
-    if (sentence == nullptr) {
+    const std::string& displayText = typer_.text();
+    if (displayText.empty()) {
         cachedWrappedLines_.clear();
         cachedLineWidths_.clear();
         cachedLineCharCounts_.clear();
@@ -670,16 +721,16 @@ void ReaderScene::refreshLayoutCache(Renderer& renderer) {
     const int textWidth = std::max(220, dialogueWidth - 48 - safetyPadding);
     const FontPreset fontPreset = app_.settings().fontPreset;
 
-    if (layoutCacheValid_ && cachedSentenceText_ == sentence->text && cachedTextWidth_ == textWidth &&
+    if (layoutCacheValid_ && cachedSentenceText_ == displayText && cachedTextWidth_ == textWidth &&
         cachedBodyFont_ == bodyFont && cachedFontPreset_ == fontPreset) {
         return;
     }
 
-    cachedSentenceText_ = sentence->text;
+    cachedSentenceText_ = displayText;
     cachedTextWidth_ = textWidth;
     cachedBodyFont_ = bodyFont;
     cachedFontPreset_ = fontPreset;
-    cachedWrappedLines_ = wrapTextSmart(sentence->text, textWidth, bodyFont, fontPreset, renderer);
+    cachedWrappedLines_ = wrapTextSmart(displayText, textWidth, bodyFont, fontPreset, renderer);
     cachedLineWidths_.clear();
     cachedLineCharCounts_.clear();
     cachedLineCodepoints_.clear();
@@ -700,8 +751,7 @@ void ReaderScene::invalidateLayoutCache() {
 }
 
 std::vector<int>& ReaderScene::visibleRevealWidthsOnCurrentPage(Renderer& renderer) const {
-    const Sentence* sentence = currentSentence();
-    if (sentence == nullptr) {
+    if (typer_.text().empty()) {
         cachedVisibleRevealWidths_.clear();
         return cachedVisibleRevealWidths_;
     }
@@ -767,9 +817,9 @@ std::size_t ReaderScene::visibleCharsOnCurrentPage(Renderer& renderer) const {
 std::size_t ReaderScene::visibleLineCapacity(Renderer& renderer) const {
     const ReaderSettings& settings = app_.settings();
     const int screenHeight = renderer.screenHeight();
-    const int dialogueHeight = uiSpacing(
-        std::max(180, std::min(screenHeight * 3 / 5, screenHeight - 120)),
-        std::max(300, std::min(screenHeight * 3 / 5, screenHeight - 160)));
+    const int headerZoneEnd = uiSpacing(std::max(116, screenHeight / 7), 156);
+    const int bottomMargin = std::max(8, screenHeight / 40);
+    const int dialogueHeight = std::max(140, screenHeight - headerZoneEnd - bottomMargin);
     const int titleHeight = renderer.lineHeight(30, settings.fontPreset);
     const int bodyHeight = renderer.lineHeight(readerBodyFont(settings), settings.fontPreset);
     const int hintHeight = renderer.lineHeight(24, settings.fontPreset);

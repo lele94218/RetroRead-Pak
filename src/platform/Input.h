@@ -28,4 +28,5 @@ public:
     virtual bool wasPressed(Action action) const = 0;
     virtual bool isHeld(Action action) const = 0;
     virtual bool quitRequested() const = 0;
+    virtual bool hadTouchActivity() const { return false; }
 };

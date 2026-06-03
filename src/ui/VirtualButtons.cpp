@@ -1,82 +1,113 @@
 #include "ui/VirtualButtons.h"
 
 #include <algorithm>
+#include <cmath>
 
-void VirtualButtons::layout(int screenWidth, int contentHeight, int fullHeight) {
+namespace {
+void fillCircle(Renderer& renderer, int cx, int cy, int r, const Color& fill, const Color& border, int borderW = 2) {
+    const float outerR = static_cast<float>(r);
+    const float innerR = static_cast<float>(r - borderW);
+    for (int dy = -r; dy <= r; ++dy) {
+        const float fy = static_cast<float>(dy);
+        const float outerX = std::sqrt(std::max(0.0f, outerR * outerR - fy * fy));
+        const int dx = static_cast<int>(outerX);
+        if (dx <= 0) continue;
+        // Border band (left + right)
+        const float innerX = (innerR > 0.0f) ? std::sqrt(std::max(0.0f, innerR * innerR - fy * fy)) : 0.0f;
+        const int idx = static_cast<int>(innerX);
+        if (idx > 0) {
+            renderer.fillRect({cx - dx, cy + dy, dx - idx, 1}, border);
+            renderer.fillRect({cx + idx, cy + dy, dx - idx, 1}, border);
+            renderer.fillRect({cx - idx, cy + dy, idx * 2, 1}, fill);
+        } else {
+            renderer.fillRect({cx - dx, cy + dy, dx * 2, 1}, border);
+        }
+    }
+}
+}
+
+void VirtualButtons::layout(int screenWidth, int contentHeight, int fullHeight, int topInset) {
     screenWidth_ = screenWidth;
     contentHeight_ = contentHeight;
     fullHeight_ = fullHeight;
+    topInset_ = topInset;
     areaY_ = contentHeight;
-    areaHeight_ = fullHeight - contentHeight;
+    areaHeight_ = fullHeight - contentHeight - topInset;
     if (areaHeight_ <= 0) return;
 
     const int cy = areaY_ + areaHeight_ / 2;
-    const int bw = 50;
-    const int bh = 38;
-    const int sw = 44;
-    const int sh = 30;
+    const int btnR = 18;
+    const int smallR = 14;
 
     // Left: D-pad
-    const int lx = 52;
-    buttons_[0] = {{lx - bw/2, cy - bh - 6, bw, bh}, {}, "Up", Action::Up};
-    buttons_[1] = {{lx - bw/2, cy + 6, bw, bh}, {}, "Dn", Action::Down};
-    buttons_[2] = {{lx - bw - 6, cy - bh/2, bw, bh}, {}, "<", Action::Left};
-    buttons_[3] = {{lx + 6, cy - bh/2, bw, bh}, {}, ">", Action::Right};
+    const int lx = 56;
+    const int spread = 26;
+    buttons_[0] = {{lx - btnR, cy - spread - btnR, btnR*2, btnR*2}, {}, "U", Action::Up};
+    buttons_[1] = {{lx - btnR, cy + spread - btnR, btnR*2, btnR*2}, {}, "D", Action::Down};
+    buttons_[2] = {{lx - spread - btnR, cy - btnR, btnR*2, btnR*2}, {}, "<", Action::Left};
+    buttons_[3] = {{lx + spread - btnR, cy - btnR, btnR*2, btnR*2}, {}, ">", Action::Right};
 
-    // Right: A / B
-    const int rx = screenWidth_ - 52;
-    buttons_[4] = {{rx + 2, cy - bh/2, bw, bh}, {}, "A", Action::Confirm};
-    buttons_[5] = {{rx - bw - 2, cy - bh/2, bw, bh}, {}, "B", Action::Left};
+    // Right: A/B/X/Y diamond layout
+    const int rx = screenWidth_ - 56;
+    const int faceSpread = 26;
+    buttons_[4] = {{rx + faceSpread - btnR, cy - btnR, btnR*2, btnR*2}, {}, "A", Action::Confirm};
+    buttons_[5] = {{rx - faceSpread - btnR, cy - btnR, btnR*2, btnR*2}, {}, "Y", Action::Secondary};
+    buttons_[6] = {{rx - btnR, cy - faceSpread - btnR, btnR*2, btnR*2}, {}, "X", Action::ToggleAuto};
+    buttons_[7] = {{rx - btnR, cy + faceSpread - btnR, btnR*2, btnR*2}, {}, "B", Action::Left};
 
-    // Center: L1, Sel, Start, Menu, R1
+    // Center: L1 Sel Str Menu R1
     const int mx = screenWidth_ / 2;
-    const int topY = areaY_ + 12;
-    const int gap = 6;
-    const int totalW = sw * 5 + gap * 4;
-    const int startX = mx - totalW / 2;
-    buttons_[6]  = {{startX, topY, sw, sh}, {}, "L1", Action::PrevChapter};
-    buttons_[7]  = {{startX + sw + gap, topY, sw, sh}, {}, "Sel", Action::Secondary};
-    buttons_[8]  = {{startX + (sw + gap) * 2, topY, sw, sh}, {}, "Str", Action::Start};
-    buttons_[9]  = {{startX + (sw + gap) * 3, topY, sw, sh}, {}, "Menu", Action::Back};
-    buttons_[10] = {{startX + (sw + gap) * 4, topY, sw, sh}, {}, "R1", Action::NextChapter};
+    const int gap = smallR * 2 + 6;
+    const int half = gap * 2;
+    const int funcY = cy;
+    buttons_[8]  = {{mx - half - smallR, funcY - smallR, smallR*2, smallR*2}, {}, "L", Action::PrevChapter};
+    buttons_[9]  = {{mx - gap - smallR, funcY - smallR, smallR*2, smallR*2}, {}, "Se", Action::Secondary};
+    buttons_[10] = {{mx - smallR, funcY - smallR, smallR*2, smallR*2}, {}, "St", Action::Start};
+    buttons_[11] = {{mx + gap - smallR, funcY - smallR, smallR*2, smallR*2}, {}, "Mn", Action::Back};
+    buttons_[12] = {{mx + half - smallR, funcY - smallR, smallR*2, smallR*2}, {}, "R", Action::NextChapter};
 
-    // Copy rect to touchRect with expanded hit areas
-    for (int i = 0; i < 11; ++i) {
+    for (int i = 0; i < 13; ++i) {
         const Rect& r = buttons_[i].rect;
-        buttons_[i].touchRect = {r.x - 4, r.y - 8, r.w + 8, r.h + 16};
+        const int expand = 6;
+        buttons_[i].touchRect = {r.x - expand, r.y - expand, r.w + expand*2, r.h + expand*2};
     }
 
-    buttonCount_ = 11;
+    buttonCount_ = 13;
 }
 
-void VirtualButtons::render(Renderer& renderer) {
+void VirtualButtons::render(Renderer& renderer, const ThemePalette& palette) {
     if (areaHeight_ <= 0) return;
 
-    renderer.fillRect({0, areaY_, screenWidth_, areaHeight_}, {10, 10, 14, 255});
+    renderer.fillRect({0, areaY_, screenWidth_, areaHeight_}, palette.screenBackground);
 
-    const Color fill{32, 32, 42, 255};
-    const Color border{65, 65, 85, 255};
-    const Color aFill{75, 35, 35, 255};
-    const Color aBorder{150, 70, 70, 255};
-    const Color bFill{35, 35, 75, 255};
-    const Color bBorder{70, 70, 150, 255};
-    const Color funcFill{28, 28, 35, 255};
-    const Color funcBorder{55, 55, 70, 255};
-    const Color txt{185, 185, 195, 255};
+    auto blend = [](const Color& c, int pct) -> Color {
+        return {static_cast<uint8_t>(std::min(255, c.r * pct / 100)),
+                static_cast<uint8_t>(std::min(255, c.g * pct / 100)),
+                static_cast<uint8_t>(std::min(255, c.b * pct / 100)), c.a};
+    };
+
+    const Color btnFill = blend(palette.dialoguePanel, 70);
+    const Color btnBorder = blend(palette.dialogueBorder, 80);
+    const Color funcFill = blend(palette.screenBackground, 130);
+    const Color funcBorder = blend(palette.dialogueBorder, 50);
+    const Color txt = palette.secondaryText;
 
     for (int i = 0; i < buttonCount_; ++i) {
-        Color f = fill, b = border;
-        if (i == 4) { f = aFill; b = aBorder; }
-        else if (i == 5) { f = bFill; b = bBorder; }
-        else if (i >= 6) { f = funcFill; b = funcBorder; }
-
-        renderer.fillRect(buttons_[i].rect, f);
-        renderer.drawRect(buttons_[i].rect, b);
+        Color f = btnFill, b = btnBorder;
+        if (i == 4) { f = palette.selectionFill; b = palette.selectionOutline; }
+        else if (i >= 8) { f = funcFill; b = funcBorder; }
 
         const Rect& r = buttons_[i].rect;
-        int fs = (i >= 6) ? 11 : 13;
+        const int cx = r.x + r.w / 2;
+        const int cy = r.y + r.h / 2;
+        const int rad = r.w / 2;
+
+        fillCircle(renderer, cx, cy, rad, f, b, 2);
+
+        const int fs = (i >= 8) ? 9 : 11;
+        const Color& labelColor = (i == 4) ? palette.selectionText : txt;
         Rect tr = {r.x, r.y + (r.h - fs - 2) / 2, r.w, fs + 4};
-        renderer.drawText(buttons_[i].label, tr, txt, fs, TextAlign::Center);
+        renderer.drawText(buttons_[i].label, tr, labelColor, fs, TextAlign::Center);
     }
 }
 
@@ -84,7 +115,7 @@ VirtualButtonHit VirtualButtons::hitTest(float normalizedX, float normalizedY) c
     if (areaHeight_ <= 0) return {false, Action::Confirm};
 
     const int px = static_cast<int>(normalizedX * static_cast<float>(screenWidth_));
-    const int py = static_cast<int>(normalizedY * static_cast<float>(fullHeight_));
+    const int py = static_cast<int>(normalizedY * static_cast<float>(fullHeight_)) - topInset_;
 
     if (py < areaY_) return {false, Action::Confirm};
 

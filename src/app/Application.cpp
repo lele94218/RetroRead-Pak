@@ -11,6 +11,7 @@
 #include <SDL.h>
 #include "platform/sdl/SDLInput.h"
 #include "ui/BookListScene.h"
+#include "ui/ThemePalette.h"
 
 #ifndef _WIN32
 #include <unistd.h>
@@ -101,10 +102,16 @@ bool Application::initialize() {
     library_.scan(*fileSystem_);
     SDL_Log("RetroRead: found %d books", static_cast<int>(library_.books().size()));
     progressStore_.load(*fileSystem_);
-    virtualButtons_.layout(renderer_->screenWidth(), renderer_->screenHeight(), renderer_->fullScreenHeight());
+    virtualButtons_.layout(renderer_->screenWidth(), renderer_->screenHeight(), renderer_->fullScreenHeight(), renderer_->topInset());
     if (auto* sdlInput = dynamic_cast<SDLInput*>(input_.get())) {
         sdlInput->setVirtualButtons(&virtualButtons_);
     }
+#if defined(__APPLE__) && TARGET_OS_IOS
+    {
+        extern void iosStartVolumeListener();
+        iosStartVolumeListener();
+    }
+#endif
     sceneManager_.setRoot(std::make_unique<BookListScene>(*this));
     running_ = true;
     SDL_Log("RetroRead: init complete");
@@ -128,6 +135,7 @@ void Application::run() {
         sceneManager_.update(dt);
 
         const bool hasInput =
+            input_->hadTouchActivity() ||
             input_->wasPressed(Action::Confirm) || input_->wasPressed(Action::FastForward) ||
             input_->wasPressed(Action::ToggleAuto) || input_->wasPressed(Action::Screenshot) ||
             input_->wasPressed(Action::OpenMenu) || input_->wasPressed(Action::Start) ||
@@ -141,7 +149,7 @@ void Application::run() {
         if (shouldRender) {
             renderer_->beginFrame();
             sceneManager_.render(*renderer_);
-            virtualButtons_.render(*renderer_);
+            virtualButtons_.render(*renderer_, themePalette(settings_.themePreset));
             if (input_->wasPressed(Action::Screenshot)) {
                 const std::string screenshotPath = buildScreenshotPath();
                 if (!screenshotPath.empty()) {

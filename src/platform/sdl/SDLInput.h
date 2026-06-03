@@ -21,6 +21,7 @@ public:
     bool wasPressed(Action action) const override;
     bool isHeld(Action action) const override;
     bool quitRequested() const override;
+    bool hadTouchActivity() const override { return touchHadActivity_; }
 
 private:
     static std::size_t indexFor(Action action);
@@ -45,6 +46,7 @@ private:
     float touchStartX_ = 0.0f;
     float touchStartY_ = 0.0f;
     bool touchActive_ = false;
+    bool touchHadActivity_ = false;
     SDL_GameController* controller_ = nullptr;
     SDL_Joystick* joystick_ = nullptr;
     bool preferJoystick_ = false;

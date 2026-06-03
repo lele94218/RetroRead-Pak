@@ -46,6 +46,8 @@ bool SettingsStore::load(FileSystem& fileSystem, ReaderSettings& settings) const
             settings.performanceMode = value == "1" ? PerformanceMode::Hud : PerformanceMode::Off;
         } else if (key == "performanceMode") {
             settings.performanceMode = static_cast<PerformanceMode>(std::stoi(value));
+        } else if (key == "sentencesPerPage") {
+            settings.sentencesPerPage = static_cast<std::uint32_t>(std::stoul(value));
         }
     }
 
@@ -63,6 +65,7 @@ bool SettingsStore::save(FileSystem& fileSystem, const ReaderSettings& settings)
     out << "themePreset\t" << static_cast<int>(settings.themePreset) << '\n';
     out << "fontPreset\t" << static_cast<int>(settings.fontPreset) << '\n';
     out << "performanceMode\t" << static_cast<int>(settings.performanceMode) << '\n';
+    out << "sentencesPerPage\t" << settings.sentencesPerPage << '\n';
 
     return fileSystem.writeTextFile(settingsPath(fileSystem), out.str());
 }

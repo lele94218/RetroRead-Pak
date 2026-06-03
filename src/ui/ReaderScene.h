@@ -70,4 +70,5 @@ private:
     mutable std::vector<std::vector<std::string>> cachedLineCodepoints_;
     mutable std::vector<int> cachedVisibleRevealWidths_;
     bool renderRequested_ = false;
+    std::uint32_t batchedSentenceCount_ = 1;
 };

@@ -5,6 +5,15 @@
 #include <filesystem>
 #include <memory>
 
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#if TARGET_OS_IOS
+extern void iosOpenFilePicker();
+extern bool iosFilePickerActive();
+extern bool iosConsumeFileImported();
+#endif
+#endif
+
 #include "app/Application.h"
 #include "core/ProgressStore.h"
 #include "epub/EpubCompiler.h"
@@ -142,6 +151,17 @@ void BookListScene::update(float dt) {
     }
 #endif
 
+#if defined(__APPLE__) && TARGET_OS_IOS
+    if (input.wasPressed(Action::Start)) {
+        iosOpenFilePicker();
+        return;
+    }
+    if (iosConsumeFileImported()) {
+        app_.sceneManager().replace(std::make_unique<BookListScene>(app_));
+        return;
+    }
+#endif
+
     if (input.wasPressed(Action::Confirm)) {
         if (books_.empty()) {
 #ifdef NEXTREADING_TG5040
@@ -183,9 +203,10 @@ void BookListScene::update(float dt) {
 
 void BookListScene::render(Renderer& renderer) {
     const int screenWidth = renderer.screenWidth();
-    const int leftMargin = std::max(24, screenWidth / 24);
-    const int headerWidth = screenWidth - leftMargin * 2;
-    const int listWidth = screenWidth - leftMargin * 2 - 12;
+    const int leftMargin = std::max(18, screenWidth / 24);
+    const int contentWidth = screenWidth - leftMargin * 2;
+    const int headerWidth = contentWidth;
+    const int listWidth = contentWidth;
     const ThemePalette palette = themePalette(app_.settings().themePreset);
 
     renderer.clear(palette.screenBackground);
@@ -198,7 +219,11 @@ void BookListScene::render(Renderer& renderer) {
         app_.settings().fontPreset);
 
     renderer.drawText(
+#if defined(__APPLE__) && TARGET_OS_IOS
+        "A: continue  Sel: chapters  Str: import",
+#else
         "A: continue  Y: chapters  Menu: quit",
+#endif
         Rect{leftMargin, 96, headerWidth, 40},
         palette.secondaryText,
         uiFont(16, 32),
@@ -223,21 +248,23 @@ void BookListScene::render(Renderer& renderer) {
         return;
     }
 
+    const int rowH = uiSpacing(48, 84);
+    const int rowGap = uiSpacing(4, 6);
     int y = uiSpacing(150, 200);
     const int startIndex = std::max(0, scrollOffset_);
     const int endIndex = std::min(static_cast<int>(books_.size()), startIndex + visibleEntryCount());
     for (int index = startIndex; index < endIndex; ++index) {
         const bool selected = index == selectedIndex_;
-        const int titleY = y + uiSpacing(2, 4);
-        const int statusY = y + uiSpacing(28, 52);
-        const Rect rowRect{leftMargin + 8, y - uiSpacing(1, 2), listWidth + 24, uiSpacing(59, 96)};
+        const Rect rowRect{leftMargin, y, contentWidth, rowH};
         if (selected) {
             renderer.fillRect(rowRect, palette.selectionFill);
             renderer.drawRect(rowRect, palette.selectionOutline);
         }
+        const int titleY = y + uiSpacing(4, 6);
+        const int statusY = y + uiSpacing(26, 48);
         renderer.drawText(
             books_[index].item.title,
-            Rect{leftMargin + 24, titleY, listWidth, uiSpacing(28, 56)},
+            Rect{leftMargin + 12, titleY, contentWidth - 24, uiSpacing(24, 44)},
             selected ? palette.selectionText : palette.primaryText,
             uiFont(20, 40),
             TextAlign::Left,
@@ -245,12 +272,12 @@ void BookListScene::render(Renderer& renderer) {
 
         renderer.drawText(
             buildListStatus(books_[index]),
-            Rect{leftMargin + 44, statusY, listWidth - 20, uiSpacing(20, 36)},
+            Rect{leftMargin + 12, statusY, contentWidth - 24, uiSpacing(18, 32)},
             selected ? palette.selectionSubtext : palette.secondaryText,
             uiFont(14, 28),
             TextAlign::Left,
             app_.settings().fontPreset);
-        y += uiSpacing(48, 88);
+        y += rowH + rowGap;
     }
 
     if (app_.settings().performanceMode == PerformanceMode::Hud) {

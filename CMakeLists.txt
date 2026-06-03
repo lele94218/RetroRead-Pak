@@ -99,6 +99,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         "-framework GameController"
         "-framework IOKit"
         "-framework CoreServices"
+        "-framework UniformTypeIdentifiers"
+        "-framework AVFoundation"
+        "-framework MediaPlayer"
     )
 
     # iOS bundle configuration

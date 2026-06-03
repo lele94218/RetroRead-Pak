@@ -142,8 +142,10 @@ bool SDLRenderer::initialize() {
 #if defined(__APPLE__) && TARGET_OS_IOS
     SDL_GetWindowSize(window_, &width_, &height_);
     fullHeight_ = height_;
+    extern int iosTopSafeInset();
+    topInset_ = iosTopSafeInset();
     if (height_ > width_) {
-        height_ = fullHeight_ / 2;
+        height_ = (fullHeight_ - topInset_) * 3 / 4;
     }
 #endif
 
@@ -617,6 +619,10 @@ int SDLRenderer::fullScreenHeight() const {
     return fullHeight_;
 }
 
+int SDLRenderer::topInset() const {
+    return topInset_;
+}
+
 #ifndef NEXTREADING_NO_SDL_TTF
 TTF_Font* SDLRenderer::fontForSize(int fontSize, FontPreset fontPreset) {
     const int key = fontCacheKey(fontSize, fontPreset);
@@ -683,7 +689,7 @@ SDL_Color SDLRenderer::toSdlColor(const Color& color) const {
 }
 
 SDL_Rect SDLRenderer::toSdlRect(const Rect& rect) const {
-    return SDL_Rect{rect.x, rect.y, rect.w, rect.h};
+    return SDL_Rect{rect.x, rect.y + topInset_, rect.w, rect.h};
 }
 
 #ifdef NEXTREADING_NO_SDL_TTF

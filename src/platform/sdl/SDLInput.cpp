@@ -4,6 +4,13 @@
 #include <cstdlib>
 #include <string>
 
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#if TARGET_OS_IOS
+extern int iosConsumeVolumeAction();
+#endif
+#endif
+
 #include "ui/VirtualButtons.h"
 
 namespace {
@@ -76,6 +83,7 @@ void SDLInput::shutdown() {
 
 void SDLInput::poll() {
     pressed_.fill(false);
+    touchHadActivity_ = false;
 
     SDL_Event event;
     while (SDL_PollEvent(&event) != 0) {
@@ -116,6 +124,15 @@ void SDLInput::poll() {
             break;
         }
     }
+
+#if defined(__APPLE__) && TARGET_OS_IOS
+    const int volAction = iosConsumeVolumeAction();
+    if (volAction > 0) {
+        setPressed(Action::Confirm);
+    } else if (volAction < 0) {
+        setPressed(Action::Left);
+    }
+#endif
 }
 
 bool SDLInput::wasPressed(Action action) const {
@@ -545,6 +562,7 @@ void SDLInput::handleFingerDown(const SDL_TouchFingerEvent& finger) {
     touchStartX_ = finger.x;
     touchStartY_ = finger.y;
     touchActive_ = true;
+    touchHadActivity_ = true;
 }
 
 void SDLInput::handleFingerUp(const SDL_TouchFingerEvent& finger) {
