@@ -183,6 +183,14 @@ bool SDLRenderer::initialize() {
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
     SDL_SetRenderDrawBlendMode(renderer_, SDL_BLENDMODE_BLEND);
 #ifndef NEXTREADING_NO_SDL_TTF
+    {
+        const std::string normalFont = findFontPath(FontPreset::Normal);
+        const std::string pixelFont = findFontPath(FontPreset::Pixel);
+        const std::string sansFont = findFontPath(FontPreset::Sans);
+        SDL_Log("RetroRead: font Normal=%s", normalFont.c_str());
+        SDL_Log("RetroRead: font Pixel=%s", pixelFont.c_str());
+        SDL_Log("RetroRead: font Sans=%s", sansFont.c_str());
+    }
     return !findFontPath(FontPreset::Normal).empty();
 #else
     return !findFontPath(FontPreset::Normal).empty();
@@ -390,8 +398,14 @@ SDLRenderer::CachedTextTexture* SDLRenderer::cachedTextTexture(
     CachedTextTexture cached;
 
 #ifndef NEXTREADING_NO_SDL_TTF
+    FontPreset effectivePreset = fontPreset;
+    if (fontPreset == FontPreset::Sans) {
+        for (unsigned char ch : text) {
+            if (ch >= 0xE0) { effectivePreset = FontPreset::Normal; break; }
+        }
+    }
     const int hiDpiFontSize = fontSize * displayScale_;
-    TTF_Font* font = fontForSize(hiDpiFontSize, fontPreset);
+    TTF_Font* font = fontForSize(hiDpiFontSize, effectivePreset);
     if (font == nullptr) {
         return nullptr;
     }
@@ -522,9 +536,15 @@ void SDLRenderer::clearTextTextureCache() {
 
 int SDLRenderer::measureTextWidth(const std::string& text, int fontSize, FontPreset fontPreset) const {
 #ifndef NEXTREADING_NO_SDL_TTF
+    FontPreset effectivePreset = fontPreset;
+    if (fontPreset == FontPreset::Sans) {
+        for (unsigned char ch : text) {
+            if (ch >= 0xE0) { effectivePreset = FontPreset::Normal; break; }
+        }
+    }
     const int hiDpiFontSize = fontSize * displayScale_;
     auto* self = const_cast<SDLRenderer*>(this);
-    TTF_Font* font = self->fontForSize(hiDpiFontSize, fontPreset);
+    TTF_Font* font = self->fontForSize(hiDpiFontSize, effectivePreset);
     if (font == nullptr || text.empty()) {
         return 0;
     }
