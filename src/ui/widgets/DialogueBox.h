@@ -18,6 +18,7 @@ public:
         std::size_t count);
     void setHint(const std::string& hint);
     void render(Renderer& renderer, const ReaderSettings& settings);
+    void advanceFrame() { ++scrambleFrame_; }
 
 private:
     Rect bounds_{40, 420, 1200, 240};
@@ -28,4 +29,5 @@ private:
     std::size_t bodyBegin_ = 0;
     std::size_t bodyCount_ = 0;
     std::string hint_;
+    std::uint32_t scrambleFrame_ = 0;
 };

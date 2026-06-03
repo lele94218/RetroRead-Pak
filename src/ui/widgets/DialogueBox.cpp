@@ -1,5 +1,7 @@
 #include <algorithm>
+#include <cstdlib>
 
+#include "text/Utf8.h"
 #include "ui/widgets/DialogueBox.h"
 #include "ui/ThemePalette.h"
 
@@ -143,9 +145,10 @@ void DialogueBox::render(Renderer& renderer, const ReaderSettings& settings) {
     const int titleFont = dialogueTitleFont();
     const int bodyFont = dialogueBodyFont(settings);
     const int hintFont = dialogueHintFont();
-    const int titleHeight = renderer.lineHeight(titleFont, settings.fontPreset);
+    const FontPreset uiFont = FontPreset::Pixel;
+    const int titleHeight = renderer.lineHeight(titleFont, uiFont);
     const int bodyHeight = renderer.lineHeight(bodyFont, settings.fontPreset);
-    const int hintHeight = renderer.lineHeight(hintFont, settings.fontPreset);
+    const int hintHeight = renderer.lineHeight(hintFont, uiFont);
     const int innerX = bounds_.x + 24;
     const int innerWidth = bounds_.w - 48;
     const int bodyRenderWidth = innerWidth;
@@ -153,7 +156,7 @@ void DialogueBox::render(Renderer& renderer, const ReaderSettings& settings) {
     const int bodyY = titleY + titleHeight + uiSpacing(14, 22);
     const int lineStep = bodyHeight + uiSpacing(6, 12);
     const int hintY = bounds_.y + bounds_.h - hintHeight - uiSpacing(10, 14);
-    renderer.drawText(title_, Rect{innerX, titleY, innerWidth, titleHeight + 6}, titleColor, titleFont, TextAlign::Left, settings.fontPreset);
+    renderer.drawText(title_, Rect{innerX, titleY, innerWidth, titleHeight + 6}, titleColor, titleFont, TextAlign::Left, uiFont);
 
     if (bodyLines_ == nullptr || bodyLineWidths_ == nullptr || bodyRevealWidths_ == nullptr) {
         renderer.drawText(
@@ -162,10 +165,11 @@ void DialogueBox::render(Renderer& renderer, const ReaderSettings& settings) {
             hintColor,
             hintFont,
             TextAlign::Right,
-            settings.fontPreset);
+            uiFont);
         return;
     }
 
+    const bool scrambleMode = settings.textRevealMode == TextRevealMode::Scramble;
     const std::size_t bodyEnd = std::min(bodyBegin_ + bodyCount_, bodyLines_->size());
     int y = bodyY;
     for (std::size_t i = bodyBegin_; i < bodyEnd; ++i) {
@@ -174,11 +178,61 @@ void DialogueBox::render(Renderer& renderer, const ReaderSettings& settings) {
         const int revealWidth =
             localIndex < bodyRevealWidths_->size() ? std::max(0, (*bodyRevealWidths_)[localIndex]) : 0;
         const int fullWidth = i < bodyLineWidths_->size() ? (*bodyLineWidths_)[i] : 0;
-        if (revealWidth <= 0) {
+        if (revealWidth <= 0 && !scrambleMode) {
             y += lineStep;
             continue;
         }
-        if (revealWidth >= fullWidth) {
+
+        if (scrambleMode) {
+            const auto& line = (*bodyLines_)[i];
+            const auto cps = utf8::splitCodepoints(line);
+            const std::size_t total = cps.size();
+            const float ratio = (fullWidth > 0) ? std::clamp(static_cast<float>(revealWidth) / fullWidth, 0.0f, 1.0f) : 0.0f;
+            const std::size_t revealed = static_cast<std::size_t>(ratio * total);
+            constexpr std::size_t decodeZone = 3;
+
+            std::string display;
+            for (std::size_t c = 0; c < total; ++c) {
+                if (c < revealed) {
+                    display += cps[c];
+                } else if (c < revealed + decodeZone && revealed > 0) {
+                    // Scramble zone: pick a random char from the same line
+                    std::uint32_t seed = static_cast<std::uint32_t>(c * 7 + scrambleFrame_ * 3);
+                    std::size_t pick = seed % total;
+                    while (utf8::isWhitespace(cps[pick]) && pick + 1 < total) ++pick;
+                    display += cps[pick];
+                } else {
+                    if (utf8::isWhitespace(cps[c])) {
+                        display += cps[c];
+                    } else {
+                        // Random printable character seeded by position
+                        std::uint32_t seed = static_cast<std::uint32_t>(c * 2654435761u + i * 97);
+                        bool isCjk = cps[c].size() >= 3;
+                        if (isCjk) {
+                            // Random CJK character (U+4E00..U+9FFF)
+                            std::uint32_t code = 0x4E00 + (seed % 0x51FF);
+                            char buf[4];
+                            buf[0] = static_cast<char>(0xE0 | (code >> 12));
+                            buf[1] = static_cast<char>(0x80 | ((code >> 6) & 0x3F));
+                            buf[2] = static_cast<char>(0x80 | (code & 0x3F));
+                            display.append(buf, 3);
+                        } else {
+                            // Random ASCII letter
+                            display += static_cast<char>('A' + seed % 26);
+                        }
+                    }
+                }
+            }
+            if (revealWidth >= fullWidth) {
+                renderer.drawText(display, textRect, bodyColor, bodyFont, TextAlign::Left, settings.fontPreset);
+            } else {
+                const Color halfAlpha{bodyColor.r, bodyColor.g, bodyColor.b, static_cast<uint8_t>(bodyColor.a / 2)};
+                renderer.drawText(display, textRect, halfAlpha, bodyFont, TextAlign::Left, settings.fontPreset);
+                if (revealWidth > 0) {
+                    renderer.drawTextReveal((*bodyLines_)[i], textRect, bodyColor, bodyFont, revealWidth, 0, TextAlign::Left, settings.fontPreset);
+                }
+            }
+        } else if (revealWidth >= fullWidth) {
             renderer.drawText(
                 (*bodyLines_)[i],
                 textRect,
@@ -206,5 +260,5 @@ void DialogueBox::render(Renderer& renderer, const ReaderSettings& settings) {
         hintColor,
         hintFont,
         TextAlign::Right,
-        settings.fontPreset);
+        uiFont);
 }

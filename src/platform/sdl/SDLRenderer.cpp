@@ -673,6 +673,22 @@ std::string SDLRenderer::findFontPath(FontPreset fontPreset) const {
 
     const std::array<std::string, 14> pixelCandidates = normalCandidates;
 
+    const std::array<std::string, 4> sansCandidates{
+        "",
+        assetsRoot != nullptr ? std::string(assetsRoot) + "/fonts/sans.ttf" : "",
+        "/System/Library/Fonts/Helvetica.ttc",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    };
+
+    if (fontPreset == FontPreset::Sans) {
+        for (const std::string& candidate : sansCandidates) {
+            if (!candidate.empty() && fs::exists(candidate)) {
+                return candidate;
+            }
+        }
+        // Fallback to normal if sans not found
+    }
+
     const auto& candidates = fontPreset == FontPreset::Pixel ? pixelCandidates : normalCandidates;
 
     for (const std::string& candidate : candidates) {

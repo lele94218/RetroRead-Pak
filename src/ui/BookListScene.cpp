@@ -216,7 +216,7 @@ void BookListScene::render(Renderer& renderer) {
         palette.headerText,
         uiFont(28, 56),
         TextAlign::Left,
-        app_.settings().fontPreset);
+        FontPreset::Pixel);
 
     renderer.drawText(
 #if defined(__APPLE__) && TARGET_OS_IOS
@@ -228,7 +228,7 @@ void BookListScene::render(Renderer& renderer) {
         palette.secondaryText,
         uiFont(16, 32),
         TextAlign::Left,
-        app_.settings().fontPreset);
+        FontPreset::Pixel);
 
     if (books_.empty()) {
         renderer.drawText(
@@ -237,14 +237,14 @@ void BookListScene::render(Renderer& renderer) {
             palette.primaryText,
             uiFont(22, 44),
             TextAlign::Left,
-            app_.settings().fontPreset);
+            FontPreset::Pixel);
         renderer.drawText(
             "Put .epub or .txt files into ./Books",
             Rect{leftMargin, 190 + uiSpacing(30, 52), headerWidth, uiSpacing(28, 44)},
             palette.primaryText,
             uiFont(22, 44),
             TextAlign::Left,
-            app_.settings().fontPreset);
+            FontPreset::Pixel);
         return;
     }
 
@@ -268,7 +268,7 @@ void BookListScene::render(Renderer& renderer) {
             selected ? palette.selectionText : palette.primaryText,
             uiFont(20, 40),
             TextAlign::Left,
-            app_.settings().fontPreset);
+            FontPreset::Pixel);
 
         renderer.drawText(
             buildListStatus(books_[index]),
@@ -276,7 +276,7 @@ void BookListScene::render(Renderer& renderer) {
             selected ? palette.selectionSubtext : palette.secondaryText,
             uiFont(14, 28),
             TextAlign::Left,
-            app_.settings().fontPreset);
+            FontPreset::Pixel);
         y += rowH + rowGap;
     }
 
@@ -287,7 +287,7 @@ void BookListScene::render(Renderer& renderer) {
             palette.secondaryText,
             uiFont(14, 18),
             TextAlign::Right,
-            app_.settings().fontPreset);
+            FontPreset::Pixel);
     }
 }
 
@@ -323,7 +323,11 @@ int BookListScene::visibleEntryCount() const {
 #ifdef NEXTREADING_TG5040
     return 6;
 #else
-    return 10;
+    const int screenH = app_.renderer().screenHeight();
+    const int listStartY = uiSpacing(150, 200);
+    const int rowStep = uiSpacing(48, 84) + uiSpacing(4, 6);
+    const int available = screenH - listStartY;
+    return std::max(2, available / std::max(1, rowStep));
 #endif
 }
 

@@ -114,6 +114,14 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME "AppIcon"
     )
 
+    # App icon via Asset Catalog
+    set(XCASSETS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ports/ios/Assets.xcassets")
+    if(EXISTS "${XCASSETS_DIR}")
+        target_sources(RetroRead PRIVATE "${XCASSETS_DIR}")
+        set_source_files_properties("${XCASSETS_DIR}" PROPERTIES
+            MACOSX_PACKAGE_LOCATION "Resources")
+    endif()
+
     # Bundle the assets folder into the app
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/pak/assets")
         file(GLOB_RECURSE ASSET_FILES "${CMAKE_CURRENT_SOURCE_DIR}/pak/assets/*")

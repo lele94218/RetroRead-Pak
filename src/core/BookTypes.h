@@ -17,12 +17,18 @@ enum class ThemePreset : std::uint8_t {
 enum class FontPreset : std::uint8_t {
     Normal = 0,
     Pixel = 1,
+    Sans = 2,
 };
 
 enum class TextVoiceMode : std::uint8_t {
     Off = 0,
     Fixed = 1,
     FollowText = 2,
+};
+
+enum class TextRevealMode : std::uint8_t {
+    Typewriter = 0,
+    Scramble = 1,
 };
 
 enum class PerformanceMode : std::uint8_t {
@@ -68,7 +74,8 @@ struct ReaderSettings {
     TextVoiceMode textVoiceMode = TextVoiceMode::Off;
     std::uint32_t fontSize = 30;
     ThemePreset themePreset = ThemePreset::ClassicDark;
-    FontPreset fontPreset = FontPreset::Normal;
+    FontPreset fontPreset = FontPreset::Pixel;
+    TextRevealMode textRevealMode = TextRevealMode::Typewriter;
     PerformanceMode performanceMode = PerformanceMode::Off;
     std::uint32_t sentencesPerPage = 2;
 };

@@ -356,7 +356,7 @@ void ReaderScene::render(Renderer& renderer) {
         palette.headerText,
         readerHeaderFont(),
         TextAlign::Left,
-        settings.fontPreset);
+        FontPreset::Pixel);
 
     if (!book_.author.empty()) {
         renderer.drawText(
@@ -365,7 +365,7 @@ void ReaderScene::render(Renderer& renderer) {
             palette.secondaryText,
             readerMetaFont(),
             TextAlign::Left,
-            settings.fontPreset);
+            FontPreset::Pixel);
     }
 
     renderer.drawText(
@@ -374,7 +374,7 @@ void ReaderScene::render(Renderer& renderer) {
         palette.secondaryText,
         readerStatusFont(),
         TextAlign::Left,
-        settings.fontPreset);
+        FontPreset::Pixel);
 
     if (settings.performanceMode == PerformanceMode::Hud) {
         renderer.drawText(
@@ -383,7 +383,7 @@ void ReaderScene::render(Renderer& renderer) {
             palette.secondaryText,
             readerMetaFont(),
             TextAlign::Right,
-            settings.fontPreset);
+            FontPreset::Pixel);
     }
 
     if (state_ == ReaderState::Finished || sentence == nullptr) {
@@ -407,6 +407,7 @@ void ReaderScene::render(Renderer& renderer) {
         pageStartLine_,
         pageCount);
     dialogueBox_.setHint(hint);
+    dialogueBox_.advanceFrame();
     dialogueBox_.render(renderer, settings);
 }
 
@@ -819,9 +820,9 @@ std::size_t ReaderScene::visibleLineCapacity(Renderer& renderer) const {
     const int headerZoneEnd = uiSpacing(std::max(116, screenHeight / 7), 156);
     const int bottomMargin = std::max(8, screenHeight / 40);
     const int dialogueHeight = std::max(140, screenHeight - headerZoneEnd - bottomMargin);
-    const int titleHeight = renderer.lineHeight(30, settings.fontPreset);
+    const int titleHeight = renderer.lineHeight(30, FontPreset::Pixel);
     const int bodyHeight = renderer.lineHeight(readerBodyFont(settings), settings.fontPreset);
-    const int hintHeight = renderer.lineHeight(24, settings.fontPreset);
+    const int hintHeight = renderer.lineHeight(24, FontPreset::Pixel);
     const int reserved =
         16 + titleHeight + uiSpacing(14, 22) + hintHeight + uiSpacing(10, 14) + uiSpacing(10, 16);
     const int availableBody = std::max(bodyHeight, dialogueHeight - reserved);

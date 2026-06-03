@@ -34,6 +34,8 @@ const char* fontPresetName(FontPreset preset) {
     switch (preset) {
     case FontPreset::Pixel:
         return "Pixel";
+    case FontPreset::Sans:
+        return "Sans (Inter)";
     case FontPreset::Normal:
     default:
         return "Normal";
@@ -103,7 +105,7 @@ void SettingsScene::update(float dt) {
         clampScroll();
     }
 
-    if (input.wasPressed(Action::Down) && selectedIndex_ < 6) {
+    if (input.wasPressed(Action::Down) && selectedIndex_ < 7) {
         ++selectedIndex_;
         clampScroll();
     }
@@ -132,7 +134,7 @@ void SettingsScene::render(Renderer& renderer) {
         palette.headerText,
         uiFont(28, 42),
         TextAlign::Left,
-        settings.fontPreset);
+        FontPreset::Pixel);
 
     renderer.drawText(
         "Up/Down: select  Left/Right: change  Start: back",
@@ -140,7 +142,7 @@ void SettingsScene::render(Renderer& renderer) {
         palette.secondaryText,
         uiFont(14, 22),
         TextAlign::Left,
-        settings.fontPreset);
+        FontPreset::Pixel);
 
     if (settings.performanceMode == PerformanceMode::Hud) {
         renderer.drawText(
@@ -149,13 +151,15 @@ void SettingsScene::render(Renderer& renderer) {
             palette.secondaryText,
             uiFont(14, 18),
             TextAlign::Right,
-            settings.fontPreset);
+            FontPreset::Pixel);
     }
 
-    const std::string rows[7] = {
+    const char* revealName = settings.textRevealMode == TextRevealMode::Scramble ? "Scramble" : "Typewriter";
+    const std::string rows[8] = {
         "Font Size: " + std::to_string(settings.fontSize),
         "Text Speed: " + std::to_string(settings.textSpeed) + " ms",
         "Sentences: " + std::to_string(settings.sentencesPerPage),
+        std::string("Reveal: ") + revealName,
         std::string("Voice: ") + textVoiceModeName(settings.textVoiceMode),
         std::string("Theme: ") + themePresetName(settings.themePreset),
         std::string("Font: ") + fontPresetName(settings.fontPreset),
@@ -166,7 +170,7 @@ void SettingsScene::render(Renderer& renderer) {
     const int rowGap = uiSpacing(4, 8);
     int y = uiSpacing(100, 140);
     const int startIndex = scrollOffset_;
-    const int endIndex = std::min(7, startIndex + 5);
+    const int endIndex = std::min(8, startIndex + 5);
     for (int i = startIndex; i < endIndex; ++i) {
         const bool selected = i == selectedIndex_;
         const Rect rowRect{margin, y, contentWidth, rowH};
@@ -181,7 +185,7 @@ void SettingsScene::render(Renderer& renderer) {
             selected ? palette.selectionText : palette.primaryText,
             uiFont(20, 36),
             TextAlign::Left,
-            settings.fontPreset);
+            FontPreset::Pixel);
         y += rowH + rowGap;
     }
 }
@@ -206,26 +210,32 @@ void SettingsScene::applyDelta(int delta) {
         break;
     }
     case 3: {
+        int mode = static_cast<int>(settings.textRevealMode);
+        mode = (mode + delta + 2) % 2;
+        settings.textRevealMode = static_cast<TextRevealMode>(mode);
+        break;
+    }
+    case 4: {
         int mode = static_cast<int>(settings.textVoiceMode);
         constexpr int kModeCount = 3;
         mode = (mode + delta + kModeCount) % kModeCount;
         settings.textVoiceMode = static_cast<TextVoiceMode>(mode);
         break;
     }
-    case 4: {
+    case 5: {
         int preset = static_cast<int>(settings.themePreset);
         constexpr int kPresetCount = 7;
         preset = (preset + delta + kPresetCount) % kPresetCount;
         settings.themePreset = static_cast<ThemePreset>(preset);
         break;
     }
-    case 5: {
+    case 6: {
         int preset = static_cast<int>(settings.fontPreset);
-        preset = (preset + delta + 2) % 2;
+        preset = (preset + delta + 3) % 3;
         settings.fontPreset = static_cast<FontPreset>(preset);
         break;
     }
-    case 6:
+    case 7:
         if (delta != 0) {
             int mode = static_cast<int>(settings.performanceMode);
             constexpr int kModeCount = 3;
@@ -246,7 +256,7 @@ void SettingsScene::returnToReader() {
 
 void SettingsScene::clampScroll() {
     const int visibleRows = 5;
-    const int maxOffset = std::max(0, 7 - visibleRows);
+    const int maxOffset = std::max(0, 8 - visibleRows);
     if (selectedIndex_ < scrollOffset_) {
         scrollOffset_ = selectedIndex_;
     }
