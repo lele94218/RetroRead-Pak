@@ -211,10 +211,12 @@ std::string HtmlTextExtractor::stripTags(const std::string& html) {
     out.reserve(html.size());
 
     bool insideTag = false;
-    for (char ch : html) {
+    bool lastWasTag = false;
+    for (std::size_t i = 0; i < html.size(); ++i) {
+        char ch = html[i];
         if (ch == '<') {
             insideTag = true;
-            out.push_back(' ');
+            lastWasTag = true;
             continue;
         }
         if (ch == '>') {
@@ -222,6 +224,20 @@ std::string HtmlTextExtractor::stripTags(const std::string& html) {
             continue;
         }
         if (!insideTag) {
+            // Only insert space for block-level tag boundaries, not inline
+            if (lastWasTag) {
+                // Add space only if there's content on both sides and neither side is punctuation/quote
+                if (!out.empty()) {
+                    unsigned char prev = static_cast<unsigned char>(out.back());
+                    unsigned char next = static_cast<unsigned char>(ch);
+                    bool prevIsAlnum = (prev < 0x80 && std::isalnum(prev));
+                    bool nextIsAlnum = (next < 0x80 && std::isalnum(next));
+                    if (prevIsAlnum && nextIsAlnum) {
+                        out.push_back(' ');
+                    }
+                }
+                lastWasTag = false;
+            }
             out.push_back(ch);
         }
     }

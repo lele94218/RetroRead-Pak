@@ -3,6 +3,12 @@ BooksCache/
 Saves/
 dist/
 
+# Build output
+build-ios/
+build-test/
+build/
+*.xcarchive
+
 nextreading
 nextreading_asan
 NUL

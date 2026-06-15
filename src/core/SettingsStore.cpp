@@ -50,6 +50,14 @@ bool SettingsStore::load(FileSystem& fileSystem, ReaderSettings& settings) const
             settings.textRevealMode = static_cast<TextRevealMode>(std::stoi(value));
         } else if (key == "sentencesPerPage") {
             settings.sentencesPerPage = static_cast<std::uint32_t>(std::stoul(value));
+        } else if (key == "translationEnabled") {
+            settings.translationEnabled = value == "1";
+        } else if (key == "translationProvider") {
+            settings.translationProvider = static_cast<TranslationProvider>(std::stoi(value));
+        } else if (key == "claudeApiKey") {
+            settings.claudeApiKey = value;
+        } else if (key == "geminiApiKey") {
+            settings.geminiApiKey = value;
         }
     }
 
@@ -69,6 +77,10 @@ bool SettingsStore::save(FileSystem& fileSystem, const ReaderSettings& settings)
     out << "performanceMode\t" << static_cast<int>(settings.performanceMode) << '\n';
     out << "textRevealMode\t" << static_cast<int>(settings.textRevealMode) << '\n';
     out << "sentencesPerPage\t" << settings.sentencesPerPage << '\n';
+    out << "translationEnabled\t" << (settings.translationEnabled ? 1 : 0) << '\n';
+    out << "translationProvider\t" << static_cast<int>(settings.translationProvider) << '\n';
+    out << "claudeApiKey\t" << settings.claudeApiKey << '\n';
+    out << "geminiApiKey\t" << settings.geminiApiKey << '\n';
 
     return fileSystem.writeTextFile(settingsPath(fileSystem), out.str());
 }

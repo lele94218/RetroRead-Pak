@@ -222,6 +222,273 @@ int iosConsumeVolumeAction() {
     return action;
 }
 
+// --- Claude API Translation ---
+
+static NSString* g_claudeResult = nil;
+static bool g_claudeReady = false;
+static bool g_claudeError = false;
+static bool g_claudeInFlight = false;
+
+void iosClaudeTranslateStart(const char* text, const char* apiKey) {
+    if (g_claudeInFlight) return;
+    g_claudeInFlight = true;
+    g_claudeReady = false;
+    g_claudeError = false;
+    g_claudeResult = nil;
+
+    @autoreleasepool {
+        NSString* nsText = [NSString stringWithUTF8String:text];
+        NSString* nsApiKey = [NSString stringWithUTF8String:apiKey];
+
+        NSString* escapedText = [nsText copy];
+        escapedText = [escapedText stringByReplacingOccurrencesOfString:@"\\" withString:@"\\\\"];
+        escapedText = [escapedText stringByReplacingOccurrencesOfString:@"\"" withString:@"\\\""];
+        escapedText = [escapedText stringByReplacingOccurrencesOfString:@"\n" withString:@"\\n"];
+        escapedText = [escapedText stringByReplacingOccurrencesOfString:@"\t" withString:@"\\t"];
+
+        NSString* jsonBody = [NSString stringWithFormat:
+            @"{\"model\":\"claude-sonnet-4-20250514\","
+             "\"max_tokens\":2048,"
+             "\"messages\":[{\"role\":\"user\","
+             "\"content\":\"Translate the following text to Chinese. "
+             "Use ONLY plain text, no markdown, no bold, no bullet points, no emoji, no special symbols. "
+             "First output the translation. "
+             "Then on a new line output 'Vocabulary:' followed by difficult words, one per line in format 'word - explanation in Chinese'. "
+             "If no difficult words, skip the vocabulary section.\\n\\n%@\"}]}",
+            escapedText];
+
+        NSURL* url = [NSURL URLWithString:@"https://api.anthropic.com/v1/messages"];
+        NSMutableURLRequest* req = [NSMutableURLRequest requestWithURL:url];
+        req.HTTPMethod = @"POST";
+        [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+        [req setValue:nsApiKey forHTTPHeaderField:@"x-api-key"];
+        [req setValue:@"2023-06-01" forHTTPHeaderField:@"anthropic-version"];
+        req.HTTPBody = [jsonBody dataUsingEncoding:NSUTF8StringEncoding];
+        req.timeoutInterval = 30.0;
+
+        NSURLSession* session = [NSURLSession sharedSession];
+        [[session dataTaskWithRequest:req completionHandler:
+            ^(NSData* data, NSURLResponse* response, NSError* error) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    if (error || !data) {
+                        g_claudeError = true;
+                        g_claudeInFlight = false;
+                        g_claudeReady = true;
+                        return;
+                    }
+                    NSString* body = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+                    // Extract "text":"..." from response JSON
+                    NSRange textRange = [body rangeOfString:@"\"text\":\""];
+                    if (textRange.location != NSNotFound) {
+                        NSUInteger start = textRange.location + textRange.length;
+                        // Find closing quote, handling escapes
+                        NSMutableString* extracted = [NSMutableString string];
+                        BOOL escaped = NO;
+                        for (NSUInteger i = start; i < body.length; ++i) {
+                            unichar ch = [body characterAtIndex:i];
+                            if (escaped) {
+                                if (ch == 'n') [extracted appendString:@"\n"];
+                                else if (ch == 't') [extracted appendString:@"\t"];
+                                else [extracted appendFormat:@"%C", ch];
+                                escaped = NO;
+                            } else if (ch == '\\') {
+                                escaped = YES;
+                            } else if (ch == '"') {
+                                break;
+                            } else {
+                                [extracted appendFormat:@"%C", ch];
+                            }
+                        }
+                        g_claudeResult = [extracted copy];
+                    } else {
+                        g_claudeError = true;
+                    }
+                    g_claudeInFlight = false;
+                    g_claudeReady = true;
+                });
+            }] resume];
+    }
+}
+
+bool iosClaudeTranslateReady() { return g_claudeReady; }
+bool iosClaudeTranslateError() { return g_claudeError; }
+
+std::string iosClaudeTranslateResult() {
+    return g_claudeResult ? std::string([g_claudeResult UTF8String]) : "";
+}
+
+void iosClaudeTranslateConsume() {
+    g_claudeReady = false;
+    g_claudeError = false;
+    g_claudeResult = nil;
+    g_claudeInFlight = false;
+}
+
+// --- Gemini API Translation ---
+
+static NSString* g_geminiResult = nil;
+static bool g_geminiReady = false;
+static bool g_geminiError = false;
+static bool g_geminiInFlight = false;
+
+void iosGeminiTranslateStart(const char* text, const char* apiKey) {
+    if (g_geminiInFlight) return;
+    g_geminiInFlight = true;
+    g_geminiReady = false;
+    g_geminiError = false;
+    g_geminiResult = nil;
+
+    @autoreleasepool {
+        NSString* nsText = [NSString stringWithUTF8String:text];
+        NSString* nsApiKey = [NSString stringWithUTF8String:apiKey];
+
+        NSString* escapedText = [nsText copy];
+        escapedText = [escapedText stringByReplacingOccurrencesOfString:@"\\" withString:@"\\\\"];
+        escapedText = [escapedText stringByReplacingOccurrencesOfString:@"\"" withString:@"\\\""];
+        escapedText = [escapedText stringByReplacingOccurrencesOfString:@"\n" withString:@"\\n"];
+        escapedText = [escapedText stringByReplacingOccurrencesOfString:@"\t" withString:@"\\t"];
+
+        NSString* prompt = [NSString stringWithFormat:
+            @"Translate the following text to Chinese. "
+             "Use ONLY plain text, no markdown, no bold, no bullet points, no emoji, no special symbols. "
+             "First output the translation. "
+             "Then on a new line output 'Vocabulary:' followed by difficult words, one per line in format 'word - explanation in Chinese'. "
+             "If no difficult words, skip the vocabulary section.\\n\\n%@",
+            escapedText];
+
+        NSString* jsonBody = [NSString stringWithFormat:
+            @"{\"contents\":[{\"parts\":[{\"text\":\"%@\"}]}]}",
+            prompt];
+
+        NSString* urlStr = [NSString stringWithFormat:
+            @"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=%@",
+            nsApiKey];
+
+        NSURL* url = [NSURL URLWithString:urlStr];
+        NSMutableURLRequest* req = [NSMutableURLRequest requestWithURL:url];
+        req.HTTPMethod = @"POST";
+        [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+        req.HTTPBody = [jsonBody dataUsingEncoding:NSUTF8StringEncoding];
+        req.timeoutInterval = 30.0;
+
+        NSURLSession* session = [NSURLSession sharedSession];
+        [[session dataTaskWithRequest:req completionHandler:
+            ^(NSData* data, NSURLResponse* response, NSError* error) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    if (error || !data) {
+                        g_geminiError = true;
+                        g_geminiInFlight = false;
+                        g_geminiReady = true;
+                        return;
+                    }
+                    NSString* body = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+                    // Extract "text": "..." from Gemini response
+                    NSRange textRange = [body rangeOfString:@"\"text\": \""];
+                    if (textRange.location == NSNotFound) {
+                        textRange = [body rangeOfString:@"\"text\":\""];
+                    }
+                    if (textRange.location != NSNotFound) {
+                        NSUInteger start = textRange.location + textRange.length;
+                        NSMutableString* extracted = [NSMutableString string];
+                        BOOL escaped = NO;
+                        for (NSUInteger i = start; i < body.length; ++i) {
+                            unichar ch = [body characterAtIndex:i];
+                            if (escaped) {
+                                if (ch == 'n') [extracted appendString:@"\n"];
+                                else if (ch == 't') [extracted appendString:@"\t"];
+                                else [extracted appendFormat:@"%C", ch];
+                                escaped = NO;
+                            } else if (ch == '\\') {
+                                escaped = YES;
+                            } else if (ch == '"') {
+                                break;
+                            } else {
+                                [extracted appendFormat:@"%C", ch];
+                            }
+                        }
+                        g_geminiResult = [extracted copy];
+                    } else {
+                        g_geminiError = true;
+                    }
+                    g_geminiInFlight = false;
+                    g_geminiReady = true;
+                });
+            }] resume];
+    }
+}
+
+bool iosGeminiTranslateReady() { return g_geminiReady; }
+bool iosGeminiTranslateError() { return g_geminiError; }
+
+std::string iosGeminiTranslateResult() {
+    return g_geminiResult ? std::string([g_geminiResult UTF8String]) : "";
+}
+
+void iosGeminiTranslateConsume() {
+    g_geminiReady = false;
+    g_geminiError = false;
+    g_geminiResult = nil;
+    g_geminiInFlight = false;
+}
+
+// --- API Key Input Dialog ---
+
+static NSString* g_apiKeyInput = nil;
+static bool g_apiKeyInputReady = false;
+
+void iosShowApiKeyInput(const char* currentKey) {
+    @autoreleasepool {
+        g_apiKeyInputReady = false;
+        g_apiKeyInput = nil;
+
+        UIViewController* rootVC = nil;
+        if (@available(iOS 15.0, *)) {
+            for (UIScene* scene in UIApplication.sharedApplication.connectedScenes) {
+                if ([scene isKindOfClass:[UIWindowScene class]]) {
+                    UIWindowScene* ws = (UIWindowScene*)scene;
+                    rootVC = ws.windows.firstObject.rootViewController;
+                    break;
+                }
+            }
+        }
+        if (!rootVC) return;
+
+        NSString* current = currentKey ? [NSString stringWithUTF8String:currentKey] : @"";
+        UIAlertController* alert = [UIAlertController
+            alertControllerWithTitle:@"Claude API Key"
+            message:@"Enter your Anthropic API key"
+            preferredStyle:UIAlertControllerStyleAlert];
+
+        [alert addTextFieldWithConfigurationHandler:^(UITextField* field) {
+            field.text = current;
+            field.placeholder = @"sk-ant-...";
+            field.secureTextEntry = NO;
+            field.autocorrectionType = UITextAutocorrectionTypeNo;
+        }];
+
+        [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel
+            handler:^(UIAlertAction* action) {
+                g_apiKeyInputReady = true;
+                g_apiKeyInput = nil;
+            }]];
+
+        [alert addAction:[UIAlertAction actionWithTitle:@"Save" style:UIAlertActionStyleDefault
+            handler:^(UIAlertAction* action) {
+                g_apiKeyInput = [alert.textFields.firstObject.text copy];
+                g_apiKeyInputReady = true;
+            }]];
+
+        [rootVC presentViewController:alert animated:YES completion:nil];
+    }
+}
+
+bool iosApiKeyInputReady() { return g_apiKeyInputReady; }
+
+std::string iosConsumeApiKeyInput() {
+    g_apiKeyInputReady = false;
+    return g_apiKeyInput ? std::string([g_apiKeyInput UTF8String]) : "";
+}
+
 __attribute__((constructor))
 static void iosSetupEnvironment() {
     @autoreleasepool {

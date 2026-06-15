@@ -4,6 +4,7 @@
 #include <string>
 
 #include "core/BookTypes.h"
+#include "core/TranslationService.h"
 #include "text/TextTyper.h"
 #include "ui/AppScene.h"
 #include "ui/widgets/DialogueBox.h"
@@ -72,4 +73,6 @@ private:
     bool renderRequested_ = false;
     std::uint32_t batchedSentenceCount_ = 1;
     std::vector<std::string> currentFootnoteIds_;
+    TranslationService translationService_;
+    std::string lastTranslationSource_;
 };

@@ -399,13 +399,18 @@ SDLRenderer::CachedTextTexture* SDLRenderer::cachedTextTexture(
 
 #ifndef NEXTREADING_NO_SDL_TTF
     FontPreset effectivePreset = fontPreset;
-    if (fontPreset == FontPreset::Sans) {
+    if (fontPreset == FontPreset::Sans || fontPreset == FontPreset::Serif) {
         for (unsigned char ch : text) {
             if (ch >= 0xE0) { effectivePreset = FontPreset::Normal; break; }
         }
     }
-    const int hiDpiFontSize = fontSize * displayScale_;
-    TTF_Font* font = fontForSize(hiDpiFontSize, effectivePreset);
+    int hiDpiFontSize = fontSize * displayScale_;
+    FontPreset renderPreset = effectivePreset;
+    if (displayScale_ > 1 && renderPreset == FontPreset::Pixel) {
+        hiDpiFontSize = hiDpiFontSize * 2 / 3;
+        renderPreset = FontPreset::Normal;
+    }
+    TTF_Font* font = fontForSize(hiDpiFontSize, renderPreset);
     if (font == nullptr) {
         return nullptr;
     }
@@ -537,14 +542,19 @@ void SDLRenderer::clearTextTextureCache() {
 int SDLRenderer::measureTextWidth(const std::string& text, int fontSize, FontPreset fontPreset) const {
 #ifndef NEXTREADING_NO_SDL_TTF
     FontPreset effectivePreset = fontPreset;
-    if (fontPreset == FontPreset::Sans) {
+    if (fontPreset == FontPreset::Sans || fontPreset == FontPreset::Serif) {
         for (unsigned char ch : text) {
             if (ch >= 0xE0) { effectivePreset = FontPreset::Normal; break; }
         }
     }
-    const int hiDpiFontSize = fontSize * displayScale_;
+    int hiDpiFontSize = fontSize * displayScale_;
+    FontPreset renderPreset = effectivePreset;
+    if (displayScale_ > 1 && renderPreset == FontPreset::Pixel) {
+        hiDpiFontSize = hiDpiFontSize * 2 / 3;
+        renderPreset = FontPreset::Normal;
+    }
     auto* self = const_cast<SDLRenderer*>(this);
-    TTF_Font* font = self->fontForSize(hiDpiFontSize, effectivePreset);
+    TTF_Font* font = self->fontForSize(hiDpiFontSize, renderPreset);
     if (font == nullptr || text.empty()) {
         return 0;
     }
@@ -586,9 +596,14 @@ int SDLRenderer::measureTextWidth(const std::string& text, int fontSize, FontPre
 
 int SDLRenderer::lineHeight(int fontSize, FontPreset fontPreset) const {
 #ifndef NEXTREADING_NO_SDL_TTF
-    const int hiDpiFontSize = fontSize * displayScale_;
+    int hiDpiFontSize = fontSize * displayScale_;
+    FontPreset renderPreset = fontPreset;
+    if (displayScale_ > 1 && renderPreset == FontPreset::Pixel) {
+        hiDpiFontSize = hiDpiFontSize * 2 / 3;
+        renderPreset = FontPreset::Normal;
+    }
     auto* self = const_cast<SDLRenderer*>(this);
-    TTF_Font* font = self->fontForSize(hiDpiFontSize, fontPreset);
+    TTF_Font* font = self->fontForSize(hiDpiFontSize, renderPreset);
     return font != nullptr ? TTF_FontLineSkip(font) / displayScale_ : fontSize + 6;
 #else
     FT_Face face = const_cast<SDLRenderer*>(this)->faceForPreset(fontPreset);
@@ -700,13 +715,26 @@ std::string SDLRenderer::findFontPath(FontPreset fontPreset) const {
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     };
 
+    const std::array<std::string, 3> serifCandidates{
+        "",
+        assetsRoot != nullptr ? std::string(assetsRoot) + "/fonts/bookerly.ttf" : "",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
+    };
+
     if (fontPreset == FontPreset::Sans) {
         for (const std::string& candidate : sansCandidates) {
             if (!candidate.empty() && fs::exists(candidate)) {
                 return candidate;
             }
         }
-        // Fallback to normal if sans not found
+    }
+
+    if (fontPreset == FontPreset::Serif) {
+        for (const std::string& candidate : serifCandidates) {
+            if (!candidate.empty() && fs::exists(candidate)) {
+                return candidate;
+            }
+        }
     }
 
     const auto& candidates = fontPreset == FontPreset::Pixel ? pixelCandidates : normalCandidates;

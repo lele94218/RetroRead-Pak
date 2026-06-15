@@ -3,6 +3,15 @@
 #include <memory>
 #include <utility>
 
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#if TARGET_OS_IOS
+extern void iosShowApiKeyInput(const char* currentKey);
+extern bool iosApiKeyInputReady();
+extern std::string iosConsumeApiKeyInput();
+#endif
+#endif
+
 #include "app/Application.h"
 #include "platform/Input.h"
 #include "platform/Renderer.h"
@@ -36,6 +45,8 @@ const char* fontPresetName(FontPreset preset) {
         return "Pixel";
     case FontPreset::Sans:
         return "Sans (Inter)";
+    case FontPreset::Serif:
+        return "Serif (Bookerly)";
     case FontPreset::Normal:
     default:
         return "Normal";
@@ -105,7 +116,22 @@ void SettingsScene::update(float dt) {
         clampScroll();
     }
 
-    if (input.wasPressed(Action::Down) && selectedIndex_ < 7) {
+    // Poll for API key input result
+#if defined(__APPLE__) && TARGET_OS_IOS
+    if (iosApiKeyInputReady()) {
+        std::string key = iosConsumeApiKeyInput();
+        if (!key.empty()) {
+            if (app_.settings().translationProvider == TranslationProvider::Gemini) {
+                app_.settings().geminiApiKey = key;
+            } else {
+                app_.settings().claudeApiKey = key;
+            }
+            app_.settingsStore().save(app_.fileSystem(), app_.settings());
+        }
+    }
+#endif
+
+    if (input.wasPressed(Action::Down) && selectedIndex_ < 10) {
         ++selectedIndex_;
         clampScroll();
     }
@@ -155,7 +181,12 @@ void SettingsScene::render(Renderer& renderer) {
     }
 
     const char* revealName = settings.textRevealMode == TextRevealMode::Scramble ? "Scramble" : "Typewriter";
-    const std::string rows[8] = {
+    const char* providerName = settings.translationProvider == TranslationProvider::Gemini ? "Gemini" : "Claude";
+    const std::string& activeKey = (settings.translationProvider == TranslationProvider::Gemini)
+        ? settings.geminiApiKey : settings.claudeApiKey;
+    std::string apiKeyDisplay = activeKey.empty() ? "Not Set" :
+        "***" + activeKey.substr(std::max<std::size_t>(0, activeKey.size() - 4));
+    const std::string rows[11] = {
         "Font Size: " + std::to_string(settings.fontSize),
         "Text Speed: " + std::to_string(settings.textSpeed) + " ms",
         "Sentences: " + std::to_string(settings.sentencesPerPage),
@@ -164,13 +195,16 @@ void SettingsScene::render(Renderer& renderer) {
         std::string("Theme: ") + themePresetName(settings.themePreset),
         std::string("Font: ") + fontPresetName(settings.fontPreset),
         std::string("Perf: ") + performanceModeName(settings.performanceMode),
+        std::string("Translate: ") + (settings.translationEnabled ? "On" : "Off"),
+        std::string("Provider: ") + providerName,
+        std::string("API Key: ") + apiKeyDisplay,
     };
 
     const int rowH = uiSpacing(46, 76);
     const int rowGap = uiSpacing(4, 8);
     int y = uiSpacing(100, 140);
     const int startIndex = scrollOffset_;
-    const int endIndex = std::min(8, startIndex + 5);
+    const int endIndex = std::min(11, startIndex + 5);
     for (int i = startIndex; i < endIndex; ++i) {
         const bool selected = i == selectedIndex_;
         const Rect rowRect{margin, y, contentWidth, rowH};
@@ -231,7 +265,7 @@ void SettingsScene::applyDelta(int delta) {
     }
     case 6: {
         int preset = static_cast<int>(settings.fontPreset);
-        preset = (preset + delta + 3) % 3;
+        preset = (preset + delta + 4) % 4;
         settings.fontPreset = static_cast<FontPreset>(preset);
         break;
     }
@@ -243,6 +277,23 @@ void SettingsScene::applyDelta(int delta) {
             settings.performanceMode = static_cast<PerformanceMode>(mode);
         }
         break;
+    case 8:
+        settings.translationEnabled = !settings.translationEnabled;
+        break;
+    case 9: {
+        int p = static_cast<int>(settings.translationProvider);
+        p = (p + 1) % 2;
+        settings.translationProvider = static_cast<TranslationProvider>(p);
+        break;
+    }
+    case 10: {
+#if defined(__APPLE__) && TARGET_OS_IOS
+        const std::string& currentKey = (settings.translationProvider == TranslationProvider::Gemini)
+            ? settings.geminiApiKey : settings.claudeApiKey;
+        iosShowApiKeyInput(currentKey.c_str());
+#endif
+        break;
+    }
     default:
         break;
     }
@@ -256,7 +307,7 @@ void SettingsScene::returnToReader() {
 
 void SettingsScene::clampScroll() {
     const int visibleRows = 5;
-    const int maxOffset = std::max(0, 8 - visibleRows);
+    const int maxOffset = std::max(0, 11 - visibleRows);
     if (selectedIndex_ < scrollOffset_) {
         scrollOffset_ = selectedIndex_;
     }

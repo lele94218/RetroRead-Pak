@@ -135,12 +135,19 @@ std::vector<std::string> wrapTextSmart(
     std::size_t lastBreakIndex = std::string::npos;
     std::string currentLine;
 
-    auto isAsciiWordChar = [](const std::string& cp) {
-        if (cp.size() != 1) {
-            return false;
+    auto isWordChar = [](const std::string& cp) {
+        if (cp.size() == 1) {
+            const unsigned char ch = static_cast<unsigned char>(cp[0]);
+            return std::isalnum(ch) != 0 || ch == '\'' || ch == '_';
         }
-        const unsigned char ch = static_cast<unsigned char>(cp[0]);
-        return std::isalnum(ch) != 0 || ch == '\'' || ch == '_';
+        // Curly apostrophe U+2019 (part of contractions like what's, it's)
+        if (cp.size() == 3 &&
+            static_cast<unsigned char>(cp[0]) == 0xE2 &&
+            static_cast<unsigned char>(cp[1]) == 0x80 &&
+            static_cast<unsigned char>(cp[2]) == 0x99) {
+            return true;
+        }
+        return false;
     };
 
     auto isBreakChar = [&](const std::string& cp) {
@@ -167,7 +174,7 @@ std::vector<std::string> wrapTextSmart(
 
     for (std::size_t i = 0; i < codepoints.size(); ++i) {
         currentLine += codepoints[i];
-        if (isBreakChar(codepoints[i]) || !isAsciiWordChar(codepoints[i])) {
+        if (isBreakChar(codepoints[i]) || !isWordChar(codepoints[i])) {
             lastBreakIndex = i;
         }
 
@@ -178,7 +185,7 @@ std::vector<std::string> wrapTextSmart(
         std::size_t breakIndex = lastBreakIndex;
         if (breakIndex == std::string::npos || breakIndex < lineStart) {
             std::size_t wordStart = i;
-            while (wordStart > lineStart && isAsciiWordChar(codepoints[wordStart - 1])) {
+            while (wordStart > lineStart && isWordChar(codepoints[wordStart - 1])) {
                 --wordStart;
             }
             if (wordStart > lineStart) {
@@ -285,16 +292,23 @@ void ReaderScene::onEnter() {
     maxVisibleLines_ = 4;
     invalidateLayoutCache();
     renderRequested_ = true;
+    translationService_.loadCache(app_.fileSystem());
     revealCurrentSentence();
     SDL_Log("RetroRead: ReaderScene ready");
 }
 
 void ReaderScene::onExit() {
     persistProgress();
+    translationService_.saveCache(app_.fileSystem());
 }
 
 void ReaderScene::update(float dt) {
     app_.textBlipPlayer().update(dt);
+    translationService_.update();
+    if (translationService_.state() == TranslationState::Ready ||
+        translationService_.state() == TranslationState::Error) {
+        renderRequested_ = true;
+    }
     handleInput();
     if (app_.sceneManager().wasReplaced()) return;
 
@@ -421,6 +435,31 @@ void ReaderScene::render(Renderer& renderer) {
             for (auto& l : lines) fnLines.push_back(std::move(l));
         }
     }
+    // Add translation lines after footnotes
+    const std::string& activeKey = (settings.translationProvider == TranslationProvider::Gemini)
+        ? settings.geminiApiKey : settings.claudeApiKey;
+    if (settings.translationEnabled && !activeKey.empty()) {
+        const int tlW = dialogueWidth - 48;
+        if (translationService_.state() == TranslationState::Loading) {
+            fnLines.push_back("");
+            fnLines.push_back("Translating...");
+        } else if (translationService_.state() == TranslationState::Ready &&
+                   translationService_.sourceText() == lastTranslationSource_) {
+            fnLines.push_back("");
+            // Split by newlines first, then wrap each paragraph
+            std::istringstream tlStream(translationService_.translatedText());
+            std::string tlPara;
+            while (std::getline(tlStream, tlPara)) {
+                if (tlPara.empty()) { fnLines.push_back(""); continue; }
+                auto wrapped = wrapTextSmart(tlPara, tlW, 16, FontPreset::Pixel, renderer);
+                for (auto& l : wrapped) fnLines.push_back(std::move(l));
+            }
+        } else if (translationService_.state() == TranslationState::Error) {
+            fnLines.push_back("");
+            fnLines.push_back("Translation unavailable");
+        }
+    }
+
     dialogueBox_.setFootnoteLines(fnLines);
 
     dialogueBox_.advanceFrame();
@@ -429,7 +468,8 @@ void ReaderScene::render(Renderer& renderer) {
 
 bool ReaderScene::shouldRenderContinuously() const {
     return state_ == ReaderState::Typing || state_ == ReaderState::AutoAdvanceDelay ||
-           app_.settings().performanceMode == PerformanceMode::Hud;
+           app_.settings().performanceMode == PerformanceMode::Hud ||
+           translationService_.state() == TranslationState::Loading;
 }
 
 bool ReaderScene::consumeRenderRequest() {
@@ -558,7 +598,9 @@ void ReaderScene::revealCurrentSentence() {
     auto needsSpace = [](const std::string& text) {
         if (text.empty()) return false;
         unsigned char last = static_cast<unsigned char>(text.back());
-        return last < 0x80 && (std::isalnum(last) || last == '"' || last == '\'' || last == ')' || last == '.');
+        if (last >= 0x80) return false;
+        return std::isalnum(last) || last == '"' || last == '\'' || last == ')' || last == '.'
+            || last == ',' || last == ';' || last == ':' || last == '!' || last == '?';
     };
 
     const Chapter* ch = currentChapter();
@@ -567,8 +609,36 @@ void ReaderScene::revealCurrentSentence() {
             const std::size_t nextIdx = progress_.sentenceIndex + s;
             if (nextIdx >= ch->sentences.size()) break;
             std::string candidate = combined;
-            if (needsSpace(candidate)) candidate += ' ';
-            candidate += ch->sentences[nextIdx].text;
+            const std::string& nextText = ch->sentences[nextIdx].text;
+            bool nextIsCjk = !nextText.empty() && static_cast<unsigned char>(nextText[0]) >= 0xE0;
+            // Check for contraction or lone apostrophe
+            bool nextIsContraction = false;
+            // Straight apostrophe: 's 't etc, or lone '
+            if (!nextText.empty() && nextText[0] == '\'') {
+                nextIsContraction = true;
+            }
+            // Curly apostrophe U+2019 = E2 80 99: 's etc, or lone '
+            if (nextText.size() >= 3 &&
+                static_cast<unsigned char>(nextText[0]) == 0xE2 &&
+                static_cast<unsigned char>(nextText[1]) == 0x80 &&
+                static_cast<unsigned char>(nextText[2]) == 0x99) {
+                nextIsContraction = true;
+            }
+            // Also don't add space if combined ends with apostrophe and next starts with lowercase
+            if (!combined.empty()) {
+                bool endsWithApostrophe = combined.back() == '\'';
+                if (!endsWithApostrophe && combined.size() >= 3) {
+                    auto sz = combined.size();
+                    endsWithApostrophe = static_cast<unsigned char>(combined[sz-3]) == 0xE2 &&
+                                         static_cast<unsigned char>(combined[sz-2]) == 0x80 &&
+                                         static_cast<unsigned char>(combined[sz-1]) == 0x99;
+                }
+                if (endsWithApostrophe && !nextText.empty() && std::islower(static_cast<unsigned char>(nextText[0]))) {
+                    nextIsContraction = true;
+                }
+            }
+            if (needsSpace(candidate) && !nextIsCjk && !nextIsContraction) candidate += ' ';
+            candidate += nextText;
             auto lines = wrapTextSmart(candidate, textWidth, bodyFont, settings.fontPreset, renderer);
             if (lines.size() > maxLines) break;
             combined = std::move(candidate);
@@ -576,17 +646,15 @@ void ReaderScene::revealCurrentSentence() {
         }
     }
 
+    int asciiCount = 0;
+    int totalCount = 0;
+    for (unsigned char c : combined) {
+        if ((c & 0xC0) != 0x80) ++totalCount;
+        if (c < 0x80 && std::isalpha(c)) ++asciiCount;
+    }
     int speed = static_cast<int>(progress_.textSpeed);
-    {
-        int asciiCount = 0;
-        int totalCount = 0;
-        for (unsigned char c : combined) {
-            if ((c & 0xC0) != 0x80) ++totalCount;
-            if (c < 0x80 && std::isalpha(c)) ++asciiCount;
-        }
-        if (totalCount > 0 && asciiCount * 100 / totalCount > 60) {
-            speed = std::max(1, speed / 5);
-        }
+    if (totalCount > 0 && asciiCount * 100 / totalCount > 60) {
+        speed = std::max(1, speed / 5);
     }
 
     // Collect footnote IDs for this batch of sentences
@@ -608,6 +676,17 @@ void ReaderScene::revealCurrentSentence() {
     pageStartLine_ = 0;
     state_ = ReaderState::Typing;
     renderRequested_ = true;
+
+    // Trigger translation if enabled and text is not mostly Chinese
+    const ReaderSettings& s = app_.settings();
+    if (s.translationEnabled && asciiCount * 100 / std::max(1, totalCount) > 40) {
+        const std::string& key = (s.translationProvider == TranslationProvider::Gemini)
+            ? s.geminiApiKey : s.claudeApiKey;
+        if (!key.empty()) {
+            lastTranslationSource_ = combined;
+            translationService_.requestTranslation(combined, key, s.translationProvider);
+        }
+    }
 }
 
 void ReaderScene::moveToNextSentence() {

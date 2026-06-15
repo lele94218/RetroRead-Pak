@@ -19,6 +19,7 @@ enum class FontPreset : std::uint8_t {
     Normal = 0,
     Pixel = 1,
     Sans = 2,
+    Serif = 3,
 };
 
 enum class TextVoiceMode : std::uint8_t {
@@ -30,6 +31,11 @@ enum class TextVoiceMode : std::uint8_t {
 enum class TextRevealMode : std::uint8_t {
     Typewriter = 0,
     Scramble = 1,
+};
+
+enum class TranslationProvider : std::uint8_t {
+    Claude = 0,
+    Gemini = 1,
 };
 
 enum class PerformanceMode : std::uint8_t {
@@ -81,6 +87,10 @@ struct ReaderSettings {
     TextRevealMode textRevealMode = TextRevealMode::Typewriter;
     PerformanceMode performanceMode = PerformanceMode::Off;
     std::uint32_t sentencesPerPage = 2;
+    bool translationEnabled = false;
+    TranslationProvider translationProvider = TranslationProvider::Gemini;
+    std::string claudeApiKey;
+    std::string geminiApiKey;
 };
 
 struct BookListItem {

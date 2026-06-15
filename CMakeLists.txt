@@ -14,6 +14,7 @@ set(RETROREAD_SOURCES
     src/core/BookCache.cpp
     src/core/ProgressStore.cpp
     src/core/SettingsStore.cpp
+    src/core/TranslationService.cpp
     src/epub/EpubCompiler.cpp
     src/epub/EpubArchive.cpp
     src/epub/EpubKernel.cpp
@@ -109,10 +110,14 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set_target_properties(RetroRead PROPERTIES
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/ports/ios/Info.plist"
-        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.expkzb.retroread"
+        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.terryx.retroread"
         XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
         XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "14.0"
         XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME "AppIcon"
+        XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "$ENV{DEVELOPMENT_TEAM}"
+        XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic"
+        XCODE_ATTRIBUTE_INSTALL_PATH "$(LOCAL_APPS_DIR)"
+        XCODE_ATTRIBUTE_SKIP_INSTALL "NO"
     )
 
     # App icon via Asset Catalog
